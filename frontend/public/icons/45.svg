@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <g transform="translate(50,50)">
+    <!-- Outer ring -->
+    <circle cx="0" cy="0" r="32" fill="none" stroke="#ffffff" stroke-width="4"/>
+    <!-- Horizontal lightning bolt -->
+    <path d="M -26 -3 L -4 -3 L 0 -9 L 4 -3 L 26 -3 L 26 3 L 4 3 L 0 9 L -4 3 L -26 3 Z" fill="#ffffff"/>
+  </g>
+</svg>
