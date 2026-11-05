@@ -74,7 +74,18 @@ func TestRejectsInvalidReadingAndMCPLimit(t *testing.T) {
 	store, _ := NewStore("")
 	handler := NewHandler(store)
 	request(t, handler, http.MethodPost, "/api/readings", `{"source":"test","tags":{}}`, http.StatusBadRequest)
-	request(t, handler, http.MethodPost, "/mcp", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_readings","arguments":{"limit":9000}}}`, http.StatusOK)
+	response := request(t, handler, http.MethodPost, "/mcp", `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query_readings","arguments":{"limit":9000}}}`, http.StatusOK)
+	var result struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response, &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Error.Message != "limit must be between 1 and 5000" {
+		t.Fatalf("unexpected MCP validation response: %s", response)
+	}
 }
 
 func request(t *testing.T, handler http.Handler, method, path, body string, status int) []byte {
