@@ -23,6 +23,8 @@ RUN apk add --no-cache nginx ca-certificates
 WORKDIR /usr/src/app
 
 COPY --from=build /out/od ./od
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
 
 # Copy application builds
 COPY frontend/dist /usr/share/nginx/html/frontend
@@ -33,4 +35,4 @@ COPY nginx.conf /etc/nginx/http.d/default.conf
 
 EXPOSE 80 4000
 
-CMD ["sh", "-c", "./od & exec nginx -g 'daemon off;'"]
+CMD ["./docker-entrypoint.sh"]

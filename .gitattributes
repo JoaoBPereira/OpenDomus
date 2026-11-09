@@ -4,3 +4,4 @@ go.mod text eol=lf
 go.sum text eol=lf
 *.webp binary
 *.png binary
+*.sh text eol=lf

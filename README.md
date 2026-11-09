@@ -96,6 +96,8 @@ Then open:
 - Back office: http://localhost:8082/bo/ (log in as `admin` with `ADMIN_PASSWORD`)
 - API: http://localhost:4000/
 
+On start the container writes `config.json` for both web apps from `BACKEND_SERVER_URL`
+and `PRICE_KWH` in `.env`, so the same image works for any API URL without rebuilding.
 
 ## Run for development
 
