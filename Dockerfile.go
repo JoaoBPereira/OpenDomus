@@ -26,7 +26,7 @@ COPY --from=build /out/od ./od
 
 # Copy application builds
 COPY frontend/dist /usr/share/nginx/html/frontend
-COPY bo/dist/spa /usr/share/nginx/html/bo
+COPY backoffice/dist/spa /usr/share/nginx/html/bo
 
 # Configure Nginx
 COPY nginx.conf /etc/nginx/http.d/default.conf

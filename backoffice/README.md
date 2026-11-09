@@ -1,43 +1,29 @@
-# bo-od (bo-od)
+# OpenDomus back office
 
-BackOffice for OpenDomus
+Admin app for OpenDomus, built with Vue 3, Quasar and Vue Flow. It talks to the
+backend REST API with a JWT obtained at login.
 
-## Install the dependencies
+## Features
 
-```bash
-yarn
-# or
+- **Devices** – list, add and edit devices (type, URL, credentials, polling).
+- **Tags** – list and edit tags; **Tag values** page to browse the float history of a tag.
+- **Automations** – two lists (time-triggered and value-triggered) and a drag-and-drop
+  editor (`/automations/:id`) where triggers, gates and actions are wired as a node graph.
+- **Logs** – paginated view of the backend log table.
+- **Server switch** – the login page lets you pick the development or production API.
+
+## Setup
+
+Server URLs are read at runtime from `public/config.json`:
+
+```sh
+cp public/config.example.json public/config.json   # set serverUrl / serverUrlProd
 npm install
-```
-
-### Start the app in development mode (hot-code reloading, error reporting, etc.)
-
-```bash
-npm run dev
-```
-
-### Lint the files
-
-```bash
-yarn lint
-# or
+npm run dev        # dev server, opens the browser
+npm run build      # production build in dist/spa/
 npm run lint
-```
-
-### Format the files
-
-```bash
-yarn format
-# or
 npm run format
 ```
 
-### Build the app for production
-
-```bash
-quasar build
-```
-
-### Customize the configuration
-
-See [Configuring quasar.config.js](https://v2.quasar.dev/quasar-cli-vite/quasar-config-js).
+The production build uses relative asset paths, so `dist/spa/` can be served from any
+prefix (the Docker image serves it at `/bo/`).

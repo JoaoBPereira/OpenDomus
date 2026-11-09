@@ -1,7 +1,20 @@
-# Open Domus backend (Go)
+# OpenDomus backend (Go)
 
-Go port of `../backend` (Node / TypeScript). It uses the same PostgreSQL schema, `.env` variables,
-REST routes, JSON payloads, JWT tokens and bcrypt hashes, so `frontend/` and `bo/` work unchanged.
+The server: it polls the devices, stores every reading in PostgreSQL, runs the automations
+and serves the REST API used by `../frontend` and `../backoffice`, plus an MCP server at `/mcp`.
+
+## Features
+
+- Device polling for Shelly (1, EM, Plug S, Plus/Gen3 Plug S, Plug M Gen3), NOUS A1T, SNZB-02D
+  (MQTT), EcoForest, Rohan Air (Tuya), Renault (MyRenault) and Yeelight.
+- Tags with float, boolean and location values and full history (TimescaleDB).
+- Automations as a node graph: timer, sunrise/sunset and tag-value triggers; and/or/condition/
+  delayed-check gates; device, HTTP and WhatsApp actions.
+- JWT login, `admin` user created from `ADMIN_PASSWORD`, API-key endpoints for sensors and phones
+  (`/saveTagValue`, `/location`).
+- Weather from IPMA, daily maintenance job, WhatsApp alerts via callmebot.
+- MCP tools for AI assistants: `list_devices`, `list_tags`, `get_tag_latest_value`,
+  `get_tag_history`, `get_tag_history_between_dates`.
 
 ## Commands
 
@@ -49,7 +62,11 @@ the `public.log` table.
 The REST routes are registered in lowercase too, because the frontend calls `/powerconsumption/...`
 for the `/powerConsumption/...` route (Express matched any case).
 
-## Differences from the TypeScript version
+## Notes from the port
+
+This is a port of the original Node/TypeScript backend, which is no longer in the repository.
+
+### Differences from the TypeScript version
 
 Fixed on purpose:
 
