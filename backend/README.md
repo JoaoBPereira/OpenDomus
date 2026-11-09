@@ -24,10 +24,10 @@ go run ./cmd/od --debug      # keep tag values in memory only (no tag value writ
 go build -o od ./cmd/od     # single binary
 ```
 
-Docker, from the repository root: `docker build -f Dockerfile.go -t od-app:go .` builds the same image
+Docker, from the repository root: `docker build -f Dockerfile.go -t opendomus-app:latest .` builds the same image
 layout as `Dockerfile` (nginx + both frontends + the backend on port 4000).
 
-Required variables: `JWT_SECRET`, `DB_HOST`, `DB_NAME`, `DB_USER` (see `.env.example`). `ADMIN_PASSWORD`
+Required variables: `JWT_SECRET`, `DB_HOST`, `DB_NAME`, `DB_USER` (see `../.env.example`). `ADMIN_PASSWORD`
 is read once, to create the `admin` user when it does not exist.
 
 ## Layout

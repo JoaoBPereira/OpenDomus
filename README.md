@@ -86,7 +86,7 @@ docker-compose.yml  App + TimescaleDB
 cp .env.example .env            # fill in DB_*, JWT_SECRET, ADMIN_PASSWORD at least
 cd frontend && npm install && npm run build && cd ..
 cd backoffice && npm install && npm run build && cd ..
-docker build -f Dockerfile.go -t od-app:latest .
+docker build -f Dockerfile.go -t opendomus-app:latest .
 docker compose up -d
 ```
 
@@ -96,15 +96,13 @@ Then open:
 - Back office: http://localhost:8082/bo/ (log in as `admin` with `ADMIN_PASSWORD`)
 - API: http://localhost:4000/
 
-The database is created and migrated on first start. `docker-compose.yml` expects the
-image name `khh-app:latest`; change it or tag the image to match.
 
 ## Run for development
 
 Each part has its own README with details. In short, with PostgreSQL running:
 
 ```sh
-cd backend    && cp .env.example .env && go run ./cmd/od      # API on :4000
+cp .env.example backend/.env && cd backend && go run ./cmd/od   # API on :4000
 cd frontend   && npm install && npm run dev                   # dashboard on :3007
 cd backoffice && npm install && npm run dev                   # back office, opens the browser
 ```
@@ -114,7 +112,7 @@ Point the web apps at the API with `frontend/public/config.js` and
 
 ## Configuration
 
-All settings are environment variables, documented in [`backend/.env.example`](backend/.env.example).
+All settings are environment variables, documented in [`.env.example`](.env.example).
 Required: `JWT_SECRET`, `DB_HOST`, `DB_NAME`, `DB_USER`. Set `LATITUDE` and `LONGITUDE`
 for sunrise/sunset automations.
 

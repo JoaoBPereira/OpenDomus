@@ -1,8 +1,8 @@
 services:
-  # Your existing app container (or split into backend/frontend)
+  # Backend + both web apps behind nginx (built from Dockerfile.go)
   app:
     image: opendomus-app:latest
-    container_name: opendomus_container
+    container_name: opendomus
     env_file:
       - .env
     ports:
@@ -10,13 +10,13 @@ services:
       - "4000:4000"
     restart: unless-stopped
     depends_on:
-      opendomus_postgres_db:
+      opendomus_db:
         condition: service_healthy
 
-  # Dedicated PostgreSQL Container
-  opendomus_postgres_db:
+  # Dedicated PostgreSQL Container (set DB_HOST=opendomus_db in .env)
+  opendomus_db:
     image: timescale/timescaledb-ha:pg18
-    container_name: opendomus_postgres_db
+    container_name: opendomus_db
     env_file:
       - .env
     environment:
@@ -26,12 +26,13 @@ services:
     ports:
       - "5434:5432" # Optional: expose to host machine for GUI tools (e.g., DBeaver)
     volumes:
-      - opendomus_postgres_data:/home/postgres/pgdata
+      - khh_postgres_data:/home/postgres/pgdata
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 15s
+      interval: 60s
       timeout: 5s
       retries: 5
 
 volumes:
-  opendomus_postgres_data: # Ensures data persists even if the container is removed
+  # Keeps the original volume name so the existing database is reused
+  khh_postgres_data:

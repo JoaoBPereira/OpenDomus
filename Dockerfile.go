@@ -1,5 +1,5 @@
 # Same image layout as ./Dockerfile, with the Go backend instead of Node.
-# docker build -f Dockerfile.go -t khh-app:go .
+# docker build -f Dockerfile.go -t opendomus-app:latest .
 
 # -----------------------------------------------------------------------------
 # Stage 1: Build the Go backend
