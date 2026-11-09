@@ -29,7 +29,10 @@ const loadRuntimeConfig = async (): Promise<Partial<AppConfig>> => {
 loadRuntimeConfig().then((runtimeConfig) => {
     globalThis.Config = {
         ...runtimeConfig,
-        serverURL: isHttpUrl(runtimeConfig.serverURL) ? runtimeConfig.serverURL! : import.meta.env.BACKEND_SERVER_URL,
+        serverURL: isHttpUrl(runtimeConfig.serverURL)
+            ? runtimeConfig.serverURL!
+            // no URL at build time (e.g. CI without .env): the API is on port 4000 of the same host
+            : import.meta.env.BACKEND_SERVER_URL || `${location.protocol}//${location.hostname}:4000/`,
     } as AppConfig;
 
     const app = createApp(App);

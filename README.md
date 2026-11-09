@@ -107,8 +107,11 @@ cd frontend   && npm install && npm run dev                   # dashboard on :30
 cd backoffice && npm install && npm run dev                   # back office, opens the browser
 ```
 
-Point the web apps at the API with `frontend/public/config.js` and
-`backoffice/public/config.json` (copy from `config.example.json`).
+Both web apps take the API URL from `BACKEND_SERVER_URL` in the root `.env` at build time.
+In CI, where `.env` does not exist, pass it as an environment variable to the build
+(`BACKEND_SERVER_URL=https://your-server/ npm run build`); without it the dashboard falls
+back to port 4000 of the host it is served from. A `public/config.json` next to each built
+app can still override the URL at runtime.
 
 ## Configuration
 

@@ -111,9 +111,11 @@ card gets its own full-width row below.
 
 ## Setup
 
-Set the backend URL in [public/config.js](public/config.js) (`serverURL`). It is
-loaded at runtime, so a built app can be pointed at another server without
-rebuilding. `priceKwh` is the electricity price used for the energy costs.
+The backend URL comes from `BACKEND_SERVER_URL` in the repo-root `.env` at build time
+(or from the environment, e.g. in CI). Without it the app uses port 4000 of the host it
+is served from. An optional `public/config.json` with `serverURL` and `priceKwh` (the
+electricity price used for the energy costs) overrides it at runtime, so a built app can
+be pointed at another server without rebuilding.
 
 ```bash
 npm install
