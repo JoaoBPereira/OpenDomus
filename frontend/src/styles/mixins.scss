@@ -1,0 +1,18 @@
+$tabletResolution: 600px;
+
+@mixin upToResolution($resolution) {
+  @media only screen and (max-width: $resolution) {
+    @content;
+  }
+}
+
+// The one "mobile" boundary in the app. Deliberately the same $tabletResolution
+// edge that already hides the desktop user menu and reveals the burger, so the
+// CSS shell, the burger and the JS `smDown` band cannot drift apart.
+// Note $phabletResolution is 300px, so @include phablet is true on every phone
+// and is NOT a mobile query — use this instead.
+@mixin mobile {
+  @include upToResolution($tabletResolution) {
+    @content;
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "go",
+      "request": "launch",
+      "name": "Debug (go)",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/od",
+      "cwd": "${workspaceFolder}",
+      "args": ["--debug"]
+    }
+  ]
+}

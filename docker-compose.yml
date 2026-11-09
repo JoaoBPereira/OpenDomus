@@ -1,0 +1,38 @@
+services:
+  # Backend + both web apps behind nginx (built from Dockerfile.go)
+  app:
+    image: opendomus-app:latest
+    container_name: opendomus
+    env_file:
+      - .env
+    ports:
+      - "8082:80"
+      - "4000:4000"
+    restart: unless-stopped
+    depends_on:
+      opendomus_db:
+        condition: service_healthy
+
+  # Dedicated PostgreSQL Container (set DB_HOST=opendomus_db in .env)
+  opendomus_db:
+    image: timescale/timescaledb-ha:pg18
+    container_name: opendomus_db
+    env_file:
+      - .env
+    environment:
+      # Overrides PGDATA from .env; must live inside the mounted volume
+      PGDATA: /home/postgres/pgdata/data
+    restart: unless-stopped
+    ports:
+      - "5434:5432" # Optional: expose to host machine for GUI tools (e.g., DBeaver)
+    volumes:
+      - khh_postgres_data:/home/postgres/pgdata
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 60s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  # Keeps the original volume name so the existing database is reused
+  khh_postgres_data:
