@@ -1,7 +1,3 @@
-interface ImportMetaEnv {
-  readonly BACKEND_SERVER_URL?: string;
-}
-
 declare namespace NodeJS {
   interface ProcessEnv {
     NODE_ENV: string;

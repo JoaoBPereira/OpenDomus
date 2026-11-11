@@ -54,16 +54,6 @@ export default defineConfig((/* ctx */) => {
 
       // publicPath: '/',
       // analyze: true,
-      // Read the repo-root .env (shared with the backend). Only BACKEND_SERVER_URL reaches the
-      // browser bundle; that file also holds secrets, so never widen this prefix.
-      env: {
-        folder: '..',
-        clientPrefix: 'BACKEND_', // Quasar needs >=1 char after the prefix, so the filter narrows it
-        filter: (env) => {
-          const key = 'import.meta.env.BACKEND_SERVER_URL';
-          return key in env ? { [key]: env[key] } : {};
-        },
-      },
       // rawDefine: {}
       // ignorePublicFolder: true,
       // minify: false,

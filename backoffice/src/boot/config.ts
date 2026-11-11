@@ -22,7 +22,7 @@ export default defineBoot(async () => {
 
     const config = (await res.json()) as RuntimeConfig;
 
-    // Only a valid http(s) URL overrides the .env value baked in at build time.
+    // Only a valid http(s) URL replaces the default.
     if (isHttpUrl(config.serverUrl)) serverConfig.url = config.serverUrl;
   } catch {
     // ignore config load errors

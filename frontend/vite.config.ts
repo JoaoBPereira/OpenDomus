@@ -10,8 +10,6 @@ const { version } = JSON.parse(readFileSync('./package.json', 'utf-8'))
 // https://vitejs.dev/config/
 export default defineConfig(({ command }) => ({
   base: './', // Makes all script/CSS references relative to current folder
-  envDir: '..', // the .env sits in the repo root, shared with the backend and the backoffice
-  envPrefix: ['VITE_', 'BACKEND_'], // expose BACKEND_SERVER_URL to the client
   plugins: [
     vue(),
     checker({ typescript: true }),

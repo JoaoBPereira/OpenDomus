@@ -16,7 +16,7 @@ const isHttpUrl = (url?: string) => {
     }
 };
 
-// Optional config.json (runtime); a valid serverURL there overrides BACKEND_SERVER_URL from .env (build time)
+// The backend URL comes from config.json, read at runtime
 const loadRuntimeConfig = async (): Promise<Partial<AppConfig>> => {
     try {
         const response = await fetch("config.json", { cache: "no-store" });
@@ -31,8 +31,8 @@ loadRuntimeConfig().then((runtimeConfig) => {
         ...runtimeConfig,
         serverURL: isHttpUrl(runtimeConfig.serverURL)
             ? runtimeConfig.serverURL!
-            // no URL at build time (e.g. CI without .env): the API is on port 4000 of the same host
-            : import.meta.env.BACKEND_SERVER_URL || `${location.protocol}//${location.hostname}:4000/`,
+            // no config.json or no valid URL in it: the API is on port 4000 of the same host
+            : `${location.protocol}//${location.hostname}:4000/`,
     } as AppConfig;
 
     const app = createApp(App);
