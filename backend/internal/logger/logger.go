@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -32,8 +34,14 @@ var (
 	database      Execer
 )
 
+// minLevel is info, or debug when LOG_LEVEL=debug (e.g. the per-node automation decisions)
+var minLevel = slog.LevelInfo
+
 // Setup makes the handler of this package the default slog logger
 func Setup() {
+	if strings.EqualFold(os.Getenv("LOG_LEVEL"), "debug") {
+		minLevel = slog.LevelDebug
+	}
 	slog.SetDefault(slog.New(&handler{}))
 }
 
@@ -49,7 +57,7 @@ type handler struct {
 }
 
 func (h *handler) Enabled(_ context.Context, level slog.Level) bool {
-	return level >= slog.LevelInfo
+	return level >= minLevel
 }
 
 func (h *handler) Handle(_ context.Context, record slog.Record) error {
@@ -77,9 +85,10 @@ func (h *handler) WithGroup(string) slog.Handler {
 	return h
 }
 
-// format renders "message key=value key=value"
+// format renders "[Package - File][Method] - message key=value key=value"
 func (h *handler) format(record slog.Record) string {
 	var builder strings.Builder
+	builder.WriteString(source(record.PC))
 	builder.WriteString(record.Message)
 	write := func(attr slog.Attr) bool {
 		builder.WriteString(" ")
@@ -93,6 +102,43 @@ func (h *handler) format(record slog.Record) string {
 	}
 	record.Attrs(write)
 	return builder.String()
+}
+
+// source turns the caller slog recorded into "[Package - File][Method] - ",
+// e.g. internal/managers/devices.go (*DevicesManager).Start -> "[Managers - Devices][Start] - "
+func source(pc uintptr) string {
+	frame, _ := runtime.CallersFrames([]uintptr{pc}).Next()
+	if frame.File == "" {
+		return ""
+	}
+	pkg := camel(path.Base(path.Dir(filepath.ToSlash(frame.File))))
+	file := camel(strings.TrimSuffix(path.Base(filepath.ToSlash(frame.File)), ".go"))
+	return "[" + pkg + " - " + file + "][" + method(frame.Function) + "] - "
+}
+
+// method keeps the function or method name: "od/internal/managers.(*DevicesManager).Start.func1" -> "Start"
+func method(function string) string {
+	parts := strings.Split(function[strings.LastIndex(function, "/")+1:], ".")
+	name := parts[len(parts)-1]
+	for _, part := range parts[1:] {
+		// skip the receiver "(*Type)", closures "func1" and nested closure numbers "1"
+		if strings.HasPrefix(part, "(") || strings.HasPrefix(part, "func") || strings.Trim(part, "0123456789") == "" {
+			continue
+		}
+		name = part
+	}
+	return name
+}
+
+// camel turns "weather_ipma" into "WeatherIpma"
+func camel(name string) string {
+	words := strings.Split(name, "_")
+	for i, word := range words {
+		if word != "" {
+			words[i] = strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+	return strings.Join(words, "")
 }
 
 func colorize(level string) string {

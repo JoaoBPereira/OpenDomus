@@ -111,11 +111,12 @@ card gets its own full-width row below.
 
 ## Setup
 
-The backend URL comes from `BACKEND_SERVER_URL` in the repo-root `.env` at build time
-(or from the environment, e.g. in CI). Without it the app uses port 4000 of the host it
-is served from. An optional `public/config.json` with `serverURL` and `priceKwh` (the
-electricity price used for the energy costs) overrides it at runtime, so a built app can
-be pointed at another server without rebuilding.
+The backend URL is read at runtime from `public/config.json`, which holds `serverURL` and
+`priceKwh` (the electricity price used for the energy costs), so a built app can be
+pointed at another server without rebuilding. Without it the app uses port 4000 of the
+host it is served from. Optional `sunLat` and `sunLon` (decimal degrees, east positive,
+e.g. `40.21` / `-8.43` for Coimbra) set the location for the sunrise and sunset times in
+the top bar; they default to Lisbon.
 
 ```bash
 npm install

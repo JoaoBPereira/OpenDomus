@@ -4,6 +4,7 @@
   import { getLatestTagValueFloat, getServerVersion } from '../../services/api';
   import { clearJwt, getJwt } from '../../utils';
   import { firstRooms, groundRooms, temperatureColor } from '../temperature/temperatureData';
+  import SunArc from './SunArc.vue';
 
   // Same scale as the floor plans, so the average reads like a room tile.
   const MIN_TEMP = 16;
@@ -90,9 +91,13 @@
 
 <template>
   <header class="topBar">
-    <div class="clock">
-      <span class="time">{{ time }}</span>
-      <span class="label">{{ date }}</span>
+    <div class="left">
+      <div class="clock">
+        <span class="time">{{ time }}</span>
+        <span class="label">{{ date }}</span>
+      </div>
+      <span class="divider" aria-hidden="true"></span>
+      <SunArc :now="now" />
     </div>
 
     <div class="houseAverage" :aria-label="`House average ${averageText} degrees Celsius`">
@@ -208,6 +213,27 @@
 
   .houseAverage {
     align-items: center;
+  }
+
+  .left {
+    display: flex;
+    align-items: center;
+    gap: 1.2cqw;
+  }
+
+  .divider {
+    align-self: stretch;
+    width: 0.08vw;
+    margin: 0.8vh 0;
+    background: $border;
+  }
+
+  // The phone bar only has room for the clock.
+  @include mobile {
+    .divider,
+    .left :deep(.sun) {
+      display: none;
+    }
   }
 
   .houseIcon {

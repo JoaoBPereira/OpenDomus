@@ -1,6 +1,9 @@
 interface AppConfig {
     serverURL: string;
     priceKwh: number;
+    // Location for the sunrise/sunset times in the top bar; Lisbon when unset.
+    sunLat?: number;
+    sunLon?: number;
 }
 
 declare var Config: AppConfig;

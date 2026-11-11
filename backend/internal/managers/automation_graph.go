@@ -3,6 +3,8 @@ package managers
 import (
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"od/internal/models"
 	"od/internal/schedule"
@@ -224,4 +226,50 @@ func evaluateGraph(graph models.AutomationGraph, firedTimer string, lastValue fu
 		output(id)
 	}
 	return outputs
+}
+
+func pick(condition bool, yes string, no string) string {
+	if condition {
+		return yes
+	}
+	return no
+}
+
+func mark(ok bool) string {
+	return pick(ok, "✓", "✗")
+}
+
+// check shows a tag test with the value it read, for the logs: "Captur battery 82 > 80 ✓",
+// "Gate open is false, wants true ✗", "Captur battery has no value ✗"
+func check(name string, node models.AutomationNode, value models.TagValue, ok bool) string {
+	switch value := value.(type) {
+	case *models.TagValueFloat:
+		if value != nil {
+			return name + " " + strconv.FormatFloat(value.Value, 'f', -1, 64) + " " + node.Operator + " " + strconv.FormatFloat(node.Value, 'f', -1, 64) + " " + mark(ok)
+		}
+	case *models.TagValueBoolean:
+		if value != nil {
+			return name + " is " + strconv.FormatBool(value.Value) + ", wants " + strconv.FormatBool(node.BoolValue) + " " + mark(ok)
+		}
+	}
+	return name + " has no value " + mark(ok)
+}
+
+// step is the decision of one node in words. summary is false for the steps that only add noise to
+// the one-line summary of a run (the triggers that did not fire).
+type step struct {
+	node    string // id, to find the node in the editor
+	text    string
+	summary bool
+}
+
+// joinSteps joins the summary steps: "Captur battery 82 > 80 ✓, AND ✓"
+func joinSteps(steps []step, separator string) string {
+	texts := []string{}
+	for _, step := range steps {
+		if step.summary {
+			texts = append(texts, step.text)
+		}
+	}
+	return strings.Join(texts, separator)
 }

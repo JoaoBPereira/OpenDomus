@@ -1,11 +1,14 @@
 package managers
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -66,7 +69,7 @@ func (manager *AutomationsManager) Start(ctx context.Context) error {
 		running := &runningAutomation{Automation: automation, active: map[string]bool{}, waits: map[string]*time.Timer{}}
 		for _, node := range automation.Graph.Nodes {
 			timerID := node.ID
-			fire := func() { manager.evaluate(running, timerID) }
+			fire := func() { manager.evaluate(running, timerID, "", "") }
 			switch node.Type {
 			case models.NodeTimer:
 				job, err := schedule.New(node.Cron, fire)
@@ -129,51 +132,190 @@ func (manager *AutomationsManager) TagValueChanged(tagID int) {
 	manager.mutex.Unlock()
 
 	for _, running := range watching {
-		manager.evaluate(running, "")
+		manager.evaluate(running, "", "", manager.tagName(tagID)+" changed")
 	}
 }
 
-func (manager *AutomationsManager) evaluate(running *runningAutomation, firedTimer string) {
+// newRunID is a short temporary id that ties together the logs of one automation run
+func newRunID() string {
+	return fmt.Sprintf("%06x", rand.Uint32()&0xffffff)
+}
+
+// evaluate runs the graph once and logs every decision with the values behind it. run is the id
+// shown in its logs: empty starts a new run, a waitCheck firing passes the id of the run that
+// started the wait so the chain keeps one id. cause says why a tag change evaluates it; a timer,
+// sun or waitCheck firing is named by firedTimer.
+func (manager *AutomationsManager) evaluate(running *runningAutomation, firedTimer string, run string, cause string) {
 	manager.mutex.Lock()
 	defer manager.mutex.Unlock()
 
 	if running.stopped {
 		return
 	}
-	outputs := evaluateGraph(running.Graph, firedTimer, manager.lastValue)
+	if run == "" {
+		run = newRunID()
+	}
+	log := slog.With("run", run)
+
+	// each tag is read once, so the logged value is the one the decision used
+	values := map[int]models.TagValue{}
+	read := func(tagID int) models.TagValue {
+		if value, found := values[tagID]; found {
+			return value
+		}
+		value := manager.lastValue(tagID)
+		values[tagID] = value
+		return value
+	}
+	names := map[string]string{}
+	for _, node := range running.Graph.Nodes {
+		names[node.ID] = manager.nodeName(node)
+	}
+	if firedTimer != "" {
+		cause = names[firedTimer] + " fired"
+	}
+
+	outputs := evaluateGraph(running.Graph, firedTimer, read)
 	inputs := inputsByNode(running.Graph)
 	// a timer or waitCheck firing counts as a new rise, even when the last evaluation was true too
 	fired := firedTimer != ""
+	// changed: something happened worth an info line (an action ran, a wait started or checked, an
+	// input of an action or wait rose or fell, a timer fired); otherwise the run logs at debug only
+	changed := fired
+	conditions, outcomes := []step{}, []step{}
 	for _, node := range running.Graph.Nodes {
+		name := names[node.ID]
 		switch {
 		case isAction(node.Type):
 			on := outputs[node.ID]
-			if on && (fired || !running.active[node.ID]) {
-				slog.Info("automation action", "automation", running.Name, "node", node.ID, "type", node.Type)
-				go manager.runAction(node)
+			changed = changed || on != running.active[node.ID]
+			switch {
+			case !on:
+				outcomes = append(outcomes, step{node.ID, name + ": not run, no input is true" + pick(running.active[node.ID], " (it can run again on the next rise)", ""), true})
+			case fired || !running.active[node.ID]:
+				outcomes = append(outcomes, step{node.ID, name + ": RUN, " + pick(fired, cause, "an input became true"), true})
+				go manager.runAction(log.With("node", node.ID), node, running.Name+": "+name)
+			default:
+				outcomes = append(outcomes, step{node.ID, name + ": not run, its input was already true on the last run", true})
 			}
 			running.active[node.ID] = on
 
 		case node.Type == models.NodeWaitCheck:
+			if firedTimer == node.ID {
+				conditions = append(conditions, step{node.ID, "check " + check(manager.tagName(node.TagID), node, values[node.TagID], outputs[node.ID]), true})
+			}
 			on := false
 			for _, input := range inputs[node.ID] {
 				on = on || outputs[input]
 			}
+			changed = changed || on != running.active[node.ID]
 			// its own firing does not restart it, or a lasting match would repeat every delay
 			rise := on && (!running.active[node.ID] || (fired && firedTimer != node.ID))
-			if rise && running.waits[node.ID] == nil {
+			switch {
+			case !on:
+				outcomes = append(outcomes, step{node.ID, name + ": not started, no input is true", true})
+			case !rise:
+				outcomes = append(outcomes, step{node.ID, name + pick(firedTimer == node.ID, ": not restarted, its own check does not start a new one", ": not started, its input was already true on the last run"), true})
+			case running.waits[node.ID] != nil:
+				outcomes = append(outcomes, step{node.ID, name + ": not started, one is already running", true})
+			default:
+				outcomes = append(outcomes, step{node.ID, name + ": STARTED", true})
 				waitID := node.ID
-				slog.Info("automation wait started", "automation", running.Name, "node", waitID, "seconds", node.DelaySeconds)
 				running.waits[waitID] = time.AfterFunc(time.Duration(node.DelaySeconds)*time.Second, func() {
 					manager.mutex.Lock()
 					delete(running.waits, waitID)
 					manager.mutex.Unlock()
-					manager.evaluate(running, waitID)
+					manager.evaluate(running, waitID, run, "")
 				})
 			}
 			running.active[node.ID] = on
+
+		case isEvent(node.Type):
+			// a timer that did not fire is only noise in the summary
+			conditions = append(conditions, step{node.ID, name + pick(outputs[node.ID], " fired ✓", " did not fire ✗"), outputs[node.ID]})
+
+		case node.Type == models.NodeTagValueFloat || node.Type == models.NodeTagValueBool:
+			conditions = append(conditions, step{node.ID, check(name, node, values[node.TagID], outputs[node.ID]), true})
+
+		case node.Type == models.NodeCondition:
+			inputsOn := true
+			for _, input := range inputs[node.ID] {
+				inputsOn = inputsOn && outputs[input]
+			}
+			if inputsOn {
+				conditions = append(conditions, step{node.ID, "if " + check(manager.tagName(node.TagID), node, values[node.TagID], outputs[node.ID]), true})
+			} else {
+				conditions = append(conditions, step{node.ID, name + " ✗ (its inputs are not all true)", true})
+			}
+
+		default: // and, or
+			conditions = append(conditions, step{node.ID, name + " " + mark(outputs[node.ID]), true})
 		}
 	}
+
+	// one readable line per run; at debug also one line per node, with its id for the editor
+	summary := running.Name + ": " + joinSteps(conditions, ", ") + " → " + joinSteps(outcomes, "; ")
+	if changed {
+		log.Info(summary, "cause", cause)
+	} else {
+		log.Debug(summary+" (nothing changed)", "cause", cause)
+	}
+	for _, step := range append(conditions, outcomes...) {
+		log.Debug(running.Name+": "+step.text, "node", step.node)
+	}
+}
+
+// nodeName describes a node in words for the logs, with the tag and device names:
+// "Captur battery", "turn off Captur plug", "wait 300s then Captur battery"
+func (manager *AutomationsManager) nodeName(node models.AutomationNode) string {
+	switch node.Type {
+	case models.NodeTimer:
+		return "timer " + node.Cron
+	case models.NodeSunrise, models.NodeSunset:
+		if node.OffsetMinutes == 0 {
+			return node.Type
+		}
+		return fmt.Sprintf("%s %+d min", node.Type, node.OffsetMinutes)
+	case models.NodeTagValueFloat, models.NodeTagValueBool:
+		return manager.tagName(node.TagID)
+	case models.NodeCondition:
+		return "if " + manager.tagName(node.TagID)
+	case models.NodeWaitCheck:
+		return fmt.Sprintf("wait %ds then %s", node.DelaySeconds, manager.tagName(node.TagID))
+	case models.NodeAnd:
+		return "AND"
+	case models.NodeOr:
+		return "OR"
+	case models.NodeWhatsApp:
+		text := []rune(node.Text)
+		if len(text) > 30 {
+			text = append(text[:30], '…')
+		}
+		return "WhatsApp " + strconv.Quote(string(text))
+	case models.NodeDevice:
+		return pick(node.On, "turn on ", "turn off ") + manager.deviceName(node.DeviceID)
+	case models.NodeHTTP:
+		return cmp.Or(node.Method, http.MethodGet) + " " + node.URL
+	}
+	return node.Type + " " + node.ID
+}
+
+func (manager *AutomationsManager) tagName(tagID int) string {
+	if tag := manager.tags.findTag(tagID); tag != nil && tag.Name != "" {
+		return tag.Name
+	}
+	return "tag " + strconv.Itoa(tagID)
+}
+
+func (manager *AutomationsManager) deviceName(deviceID int) string {
+	if manager.devices != nil {
+		for _, device := range manager.devices.Devices() {
+			if fields := device.Fields(); fields.ID == deviceID && fields.Name != "" {
+				return fields.Name
+			}
+		}
+	}
+	return "device " + strconv.Itoa(deviceID)
 }
 
 func (manager *AutomationsManager) lastValue(tagID int) models.TagValue {
@@ -184,38 +326,40 @@ func (manager *AutomationsManager) lastValue(tagID int) models.TagValue {
 	return tag.LastValue()
 }
 
-func (manager *AutomationsManager) runAction(node models.AutomationNode) {
+// runAction does the action; name is "automation: action" in words, used in the logs
+func (manager *AutomationsManager) runAction(log *slog.Logger, node models.AutomationNode, name string) {
 	ctx, cancel := context.WithTimeout(context.Background(), jobTimeout)
 	defer cancel()
 
 	switch node.Type {
 	case models.NodeWhatsApp:
+		log.Info(name + ": sending")
 		sendWhatsApp(manager.cfg, manager.http, node.Text)
 	case models.NodeDevice:
 		device := manager.devices.PowerDevice(node.DeviceID)
 		if device == nil {
-			slog.Error("automation: no power device", "device", node.DeviceID)
+			log.Error(name+": not done, it is not a power device", "device", node.DeviceID)
 			return
 		}
 		// skip the request when the relay is already in the wanted state; an unknown state still sends it
 		if on, err := device.RelayOn(ctx); err == nil && on == node.On {
-			slog.Info("automation: device already in the wanted state", "device", node.DeviceID, "on", on)
+			log.Info(name + ": nothing sent, it is already " + pick(on, "on", "off"))
 			return
 		} else if err != nil {
-			slog.Warn("automation: device state unknown, sending anyway", "device", node.DeviceID, "err", err)
+			log.Warn(name+": its state is unknown, sending anyway", "err", err)
 		}
 		if node.On {
 			device.TurnOn(ctx)
 		} else {
 			device.TurnOff(ctx)
 		}
+		// TurnOn/TurnOff report their own failures, so this only says the command went out
+		log.Info(name + ": command sent")
 	case models.NodeHTTP:
-		method := node.Method
-		if method == "" {
-			method = http.MethodGet
-		}
-		if _, status, err := manager.http.Do(ctx, method, node.URL, node.Body, node.Headers); err != nil {
-			slog.Error("automation: http request failed", "url", node.URL, "status", status, "err", err)
+		if _, status, err := manager.http.Do(ctx, cmp.Or(node.Method, http.MethodGet), node.URL, node.Body, node.Headers); err != nil {
+			log.Error(name+": failed", "status", status, "err", err)
+		} else {
+			log.Info(name+": done", "status", status)
 		}
 	}
 }
