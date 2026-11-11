@@ -1,12 +1,15 @@
 package routes
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"od/internal/managers"
 )
@@ -35,7 +38,12 @@ func SendError(response http.ResponseWriter, err error, notFound string, failed 
 		SendMessage(response, http.StatusNotFound, notFound)
 		return
 	}
-	slog.Error(failed, "err", err)
+	// Log as the route handler that called SendError, so the log prefix names it instead of this helper
+	var pcs [1]uintptr
+	runtime.Callers(2, pcs[:])
+	record := slog.NewRecord(time.Now(), slog.LevelError, failed, pcs[0])
+	record.Add("err", err)
+	slog.Default().Handler().Handle(context.Background(), record)
 	SendMessage(response, http.StatusInternalServerError, failed)
 }
 
