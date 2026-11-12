@@ -91,6 +91,9 @@ func jsonResult(value any) *mcpsdk.CallToolResult {
 	return textResult(string(text))
 }
 
+// noInput is the schema of the tools without parameters: the SDK default omits "properties", which strict clients reject
+var noInput = json.RawMessage(`{"type":"object","properties":{}}`)
+
 func (s *Server) newServer() *mcpsdk.Server {
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "od-smart-home", Version: "1.0.0"}, nil)
 
@@ -98,6 +101,7 @@ func (s *Server) newServer() *mcpsdk.Server {
 		Name:        "list_devices",
 		Title:       "List Devices",
 		Description: "Returns all registered smart home devices with their id, name, type, enabled state, and URL.",
+		InputSchema: noInput,
 	}, func(ctx context.Context, request *mcpsdk.CallToolRequest, input any) (*mcpsdk.CallToolResult, any, error) {
 		devices := []map[string]any{}
 		for _, device := range s.devices.Devices() {
@@ -111,6 +115,7 @@ func (s *Server) newServer() *mcpsdk.Server {
 		Name:        "list_tags",
 		Title:       "List Tags",
 		Description: "Returns all registered tags with their id, name, type, valueType, and latest value.",
+		InputSchema: noInput,
 	}, func(ctx context.Context, request *mcpsdk.CallToolRequest, input any) (*mcpsdk.CallToolResult, any, error) {
 		tags := []map[string]any{}
 		for _, tag := range s.tags.Tags() {

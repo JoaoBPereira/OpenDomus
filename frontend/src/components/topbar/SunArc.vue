@@ -17,6 +17,19 @@
   const times = computed(() => sunTimes(props.now, lat, lon));
   const format = (date?: Date) => date?.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) ?? EMPTY;
 
+  // The next two sun events, soonest first: sunset then tomorrow's sunrise at 13:00, tomorrow's sunrise then sunset at 23:00.
+  const upcoming = computed<{ kind: 'rise' | 'set'; at?: Date }[]>(() => {
+    const tomorrow = new Date(props.now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const events = [times.value, sunTimes(tomorrow, lat, lon)]
+      .flatMap((day) => (day ? [{ kind: 'rise' as const, at: day.sunrise }, { kind: 'set' as const, at: day.sunset }] : []))
+      .filter((event) => event.at > props.now)
+      .slice(0, 2);
+    // Polar day or night: no events, show both rows empty.
+    return events.length === 2 ? events : [{ kind: 'rise' }, { kind: 'set' }];
+  });
+  const label = computed(() => upcoming.value.map((event) => `${event.kind === 'rise' ? 'Sunrise' : 'Sunset'} ${format(event.at)}`).join(', '));
+
   // 0 at sunrise, 1 at sunset; outside that range it is night.
   const progress = computed(() => {
     if (!times.value) return undefined;
@@ -44,7 +57,7 @@
 </script>
 
 <template>
-  <div class="sun" :aria-label="`Sunrise ${format(times?.sunrise)}, sunset ${format(times?.sunset)}, daylight left ${daylight}`">
+  <div class="sun" :aria-label="`${label}, daylight left ${daylight}`">
     <svg class="arc" viewBox="0 0 100 52" aria-hidden="true">
       <path class="track" :d="`M ${CX - R} ${CY} A ${R} ${R} 0 0 1 ${CX + R} ${CY}`" />
       <path v-if="isDay" class="travelled" :d="travelled" />
@@ -53,17 +66,11 @@
     </svg>
 
     <div class="times">
-      <span class="row">
-        <svg class="icon rise" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 20h18M7 20a5 5 0 0 1 10 0M12 3v7M9 6l3-3 3 3" />
+      <span v-for="event in upcoming" :key="event.kind" class="row">
+        <svg class="icon" :class="event.kind" viewBox="0 0 24 24" aria-hidden="true">
+          <path :d="`M3 20h18M7 20a5 5 0 0 1 10 0M12 3v7${event.kind === 'rise' ? 'M9 6l3-3 3 3' : 'M9 7l3 3 3-3'}`" />
         </svg>
-        <span class="lcd">{{ format(times?.sunrise) }}</span>
-      </span>
-      <span class="row">
-        <svg class="icon set" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3 20h18M7 20a5 5 0 0 1 10 0M12 3v7M9 7l3 3 3-3" />
-        </svg>
-        <span class="lcd">{{ format(times?.sunset) }}</span>
+        <span class="lcd">{{ format(event.at) }}</span>
       </span>
     </div>
 
