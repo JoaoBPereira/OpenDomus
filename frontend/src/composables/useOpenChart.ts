@@ -1,6 +1,6 @@
 import type { InjectionKey } from 'vue'
 
-export type OpenChartFn = (tagId: string, title: string, lowerLimit?: number, upperLimit?: number) => void
+export type OpenChartFn = (tagId: string, title: string, lowerLimit?: number, upperLimit?: number, locationTagId?: number) => void
 
 /** Provided by MainView — opens a plain line chart */
 export const openChartKey: InjectionKey<OpenChartFn> = Symbol('openChart')

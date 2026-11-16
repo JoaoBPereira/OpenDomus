@@ -3,7 +3,7 @@
 
   import { openChartKey, openChartTimeSeriesKey } from '../composables/useOpenChart';
   import PowerConsumptionStats from '../components/power/PowerConsumptionStats.vue';
-  import { TAG_CAR_CAPTUR_BATTERY, TAG_CAR_CAPTUR_PLUG } from '../constants/tagIds';
+  import { TAG_CAR_CAPTUR_BATTERY, TAG_CAR_CAPTUR_LOCATION, TAG_CAR_CAPTUR_PLUG } from '../constants/tagIds';
 
   import Car from '../components/car/Car.vue';
   import Gate from '../components/gate/Gate.vue';
@@ -13,6 +13,7 @@
   import TopBar from '../components/topbar/TopBar.vue';
   import Weather from '../components/weather/Weather.vue';
   import Modal from '../components/ui/Modal.vue';
+  import LocationMap from '../components/car/LocationMap.vue';
   import { getTagValueFloat, getTagValueFloatTimeSeries } from '../services/api';
 
   interface ChartPoint {
@@ -34,6 +35,30 @@
   const scatterDataMin = ref<ChartPoint[]>([]);
   const chartLowerLimit = ref(0);
   const chartUpperLimit = ref(30);
+
+  // The chart modal turns into an accordion (chart | map) when it is opened with a location.
+  const locationTagId = ref<number>();
+  const expanded = ref<'chart' | 'map'>('chart');
+
+  // The day picked in the accordion (yyyy-mm-dd); empty shows the last 24 hours.
+  const selectedDay = ref('');
+  // Today as yyyy-mm-dd in local time (the Swedish locale formats dates that way).
+  const today = () => new Date().toLocaleDateString('sv-SE');
+  const chartTagId = ref('');
+  const chartRange = ref<[string, string]>(['', '']);
+
+  // Loads the line chart for the picked day (local midnight to midnight) or the last 24 hours.
+  async function loadLine() {
+    const to = selectedDay.value ? new Date(`${selectedDay.value}T00:00:00`) : new Date();
+    const from = new Date(to);
+    (selectedDay.value ? to : from).setDate(to.getDate() + (selectedDay.value ? 1 : -1));
+    chartRange.value = [from.toISOString(), to.toISOString()];
+
+    const json = await getTagValueFloat(chartTagId.value, ...chartRange.value);
+    // The server answers "0" instead of an empty list.
+    lineData.value = (Array.isArray(json) ? json : []).map((element) => ({ value: element.value, date: new Date(element.time) }));
+  }
+
 
   const lineOption = computed(() => ({
     backgroundColor: 'transparent',
@@ -114,21 +139,17 @@
     ],
   }));
 
-  async function openChart(tagId: string, title: string, lowerLimit = 10, upperLimit = 30) {
-    const tempValues: ChartPoint[] = [];
+  async function openChart(tagId: string, title: string, lowerLimit = 10, upperLimit = 30, withLocationTagId?: number) {
+    locationTagId.value = withLocationTagId;
+    expanded.value = 'chart';
+    selectedDay.value = today();
+    chartTagId.value = tagId;
 
     chartLowerLimit.value = lowerLimit;
     chartUpperLimit.value = upperLimit;
 
-    const now = new Date();
-    const hoursPrevious24 = new Date();
-    hoursPrevious24.setDate(hoursPrevious24.getDate() - 1);
-
-    const json = await getTagValueFloat(tagId, hoursPrevious24.toISOString(), now.toISOString());
-    json.forEach((element) => {
-      tempValues.push({ value: element.value, date: new Date(element.time) });
-    });
-    lineData.value = tempValues;
+    await loadLine();
+    const tempValues = lineData.value;
 
     dialogTitle.value = title;
     if (tempValues.length > 0) {
@@ -211,7 +232,7 @@
         <PcStats />
       </div>
       <div class="outsideCapturContainer">
-        <Car label="Captur" :battery-tag-id="TAG_CAR_CAPTUR_BATTERY" :plug-tag-id="TAG_CAR_CAPTUR_PLUG" />
+        <Car label="Captur" :battery-tag-id="TAG_CAR_CAPTUR_BATTERY" :plug-tag-id="TAG_CAR_CAPTUR_PLUG" :location-tag-id="TAG_CAR_CAPTUR_LOCATION" />
       </div>
     </div>
 
@@ -220,8 +241,29 @@
     </div>
 
     <Modal :open="showDialog" :title="dialogTitle" @close="closeDialog">
-      <div style="width: 100%; height: 100%">
-        <VChart v-if="chartType === 0" :option="lineOption" autoresize style="width: 100%; height: 100%" />
+      <div v-if="chartType === 0 && locationTagId !== undefined" class="accordion">
+        <label class="dayPicker">
+          Day
+          <input v-model="selectedDay" type="date" @change="loadLine" />
+          <span v-if="!selectedDay">(last 24h)</span>
+        </label>
+        <button type="button" :aria-expanded="expanded === 'chart'" @click="expanded = 'chart'">Battery</button>
+        <VChart v-if="expanded === 'chart'" class="accordionPanel" :option="lineOption" autoresize />
+        <button type="button" :aria-expanded="expanded === 'map'" @click="expanded = 'map'">Location</button>
+        <!-- The key remounts the map when the period changes. -->
+        <LocationMap
+          v-if="expanded === 'map'"
+          :key="chartRange[0]"
+          class="accordionPanel"
+          :tag-id="locationTagId"
+          :from="chartRange[0]"
+          :to="chartRange[1]"
+          :show-latest="!selectedDay || selectedDay === today()"
+          :battery="lineData"
+        />
+      </div>
+      <div v-else style="width: 100%; height: 100%">
+        <VChart v-if="chartType === 0":option="lineOption" autoresize style="width: 100%; height: 100%" />
         <VChart v-else :option="scatterOption" autoresize style="width: 100%; height: 100%" />
       </div>
     </Modal>
@@ -302,6 +344,63 @@
       flex: 1;
       display: flex;
       justify-content: center;
+    }
+  }
+
+  // The open panel takes the height the two headers leave.
+  .accordion {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    height: 100%;
+
+    .dayPicker {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      input {
+        padding: 4px 8px;
+        border: 1px solid #444444;
+        border-radius: 4px;
+        background: #1a1a1a;
+        color: #ffffff;
+        font: inherit;
+        color-scheme: dark;
+      }
+    }
+
+    > button {
+      flex: 0 0 auto;
+      padding: 8px 12px;
+      border: 1px solid #444444;
+      border-radius: 4px;
+      background: #1a1a1a;
+      color: #ffffff;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+
+      &::before {
+        content: '+ ';
+      }
+
+      &[aria-expanded='true'] {
+        background: #2a2a2a;
+
+        &::before {
+          content: '- ';
+        }
+      }
+    }
+
+    .accordionPanel {
+      flex: 1 1 0;
+      min-height: 0;
+      width: 100%;
+      margin: 0;
+      border: 0;
     }
   }
 

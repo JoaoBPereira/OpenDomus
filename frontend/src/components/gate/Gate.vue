@@ -43,7 +43,7 @@
     return groups;
   });
 
-  const formatTime = (d: Date) => d.toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  const formatTime = (d: Date) => d.toLocaleTimeString('en-US', { timeZone: TZ, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
 
   const isOpen = computed(() => gateOpen.value !== undefined && gateOpen.value.value !== 0);
   const statusText = computed(() => {

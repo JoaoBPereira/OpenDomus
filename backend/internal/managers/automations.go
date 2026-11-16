@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
@@ -39,9 +38,13 @@ type AutomationsManager struct {
 type runningAutomation struct {
 	models.Automation
 	jobs    []*schedule.Job
-	active  map[string]bool        // action outputs, and waitCheck inputs, of the last evaluation
+	wasOn   map[string]bool        // inputs of the actions and waitChecks on the last evaluation
 	waits   map[string]*time.Timer // waitCheck delays running
 	stopped bool
+}
+
+func newRunningAutomation(automation models.Automation) *runningAutomation {
+	return &runningAutomation{Automation: automation, wasOn: map[string]bool{}, waits: map[string]*time.Timer{}}
 }
 
 func NewAutomationsManager(cfg *config.Config, db *postgres.DB, tags *TagsManager, devices *DevicesManager, http *httpclient.Client) *AutomationsManager {
@@ -66,33 +69,44 @@ func (manager *AutomationsManager) Start(ctx context.Context) error {
 			slog.Error("automation skipped", "id", automation.ID, "name", automation.Name, "err", err)
 			continue
 		}
-		running := &runningAutomation{Automation: automation, active: map[string]bool{}, waits: map[string]*time.Timer{}}
+		running := newRunningAutomation(automation)
 		for _, node := range automation.Graph.Nodes {
-			timerID := node.ID
-			fire := func() { manager.evaluate(running, timerID, "", "") }
-			switch node.Type {
-			case models.NodeTimer:
-				job, err := schedule.New(node.Cron, fire)
-				if err != nil {
-					slog.Error("automation timer skipped", "id", automation.ID, "node", timerID, "err", err)
-					continue
-				}
+			if job := manager.scheduleNode(running, node); job != nil {
 				running.jobs = append(running.jobs, job)
-			case models.NodeSunrise, models.NodeSunset:
-				if manager.cfg.Latitude == 0 && manager.cfg.Longitude == 0 {
-					slog.Warn("automation sun trigger skipped, LATITUDE and LONGITUDE are not set", "id", automation.ID, "node", timerID)
-					continue
-				}
-				lat, lon := manager.cfg.Latitude, manager.cfg.Longitude
-				rise, offset := node.Type == models.NodeSunrise, node.OffsetMinutes
-				next := func(after time.Time) time.Time { return nextSunEvent(lat, lon, rise, offset, after) }
-				slog.Info("automation sun trigger", "automation", automation.Name, "node", timerID, "next", next(time.Now()).Format("2006-01-02 15:04"))
-				running.jobs = append(running.jobs, schedule.NewFunc(next, fire))
 			}
 		}
 		manager.running = append(manager.running, running)
 	}
 	slog.Info("automations started", "count", len(manager.running))
+	return nil
+}
+
+// scheduleNode starts the job that fires a timer, sunrise or sunset node. The other nodes have
+// none, and a node that cannot be scheduled is logged and skipped: both return nil.
+func (manager *AutomationsManager) scheduleNode(running *runningAutomation, node models.AutomationNode) *schedule.Job {
+	fire := func() { manager.evaluate(running, node.ID, "", "") }
+
+	switch node.Type {
+	case models.NodeTimer:
+		job, err := schedule.New(node.Cron, fire)
+		if err != nil {
+			slog.Error("automation timer skipped", "id", running.ID, "node", node.ID, "err", err)
+			return nil
+		}
+		return job
+
+	case models.NodeSunrise, models.NodeSunset:
+		lat, lon := manager.cfg.Latitude, manager.cfg.Longitude
+		if lat == 0 && lon == 0 {
+			slog.Warn("automation sun trigger skipped, LATITUDE and LONGITUDE are not set", "id", running.ID, "node", node.ID)
+			return nil
+		}
+		next := func(after time.Time) time.Time {
+			return nextSunEvent(lat, lon, node.Type == models.NodeSunrise, node.OffsetMinutes, after)
+		}
+		slog.Info("automation sun trigger", "automation", running.Name, "node", node.ID, "next", next(time.Now()).Format("2006-01-02 15:04"))
+		return schedule.NewFunc(next, fire)
+	}
 	return nil
 }
 
@@ -123,7 +137,7 @@ func (manager *AutomationsManager) TagValueChanged(tagID int) {
 	watching := []*runningAutomation{}
 	for _, running := range manager.running {
 		for _, node := range running.Graph.Nodes {
-			if (node.Type == models.NodeTagValueFloat || node.Type == models.NodeTagValueBool) && node.TagID == tagID {
+			if watchesTag(node.Type) && node.TagID == tagID {
 				watching = append(watching, running)
 				break
 			}
@@ -141,21 +155,23 @@ func newRunID() string {
 	return fmt.Sprintf("%06x", rand.Uint32()&0xffffff)
 }
 
-// evaluate runs the graph once and logs every decision with the values behind it. run is the id
-// shown in its logs: empty starts a new run, a waitCheck firing passes the id of the run that
-// started the wait so the chain keeps one id. cause says why a tag change evaluates it; a timer,
-// sun or waitCheck firing is named by firedTimer.
-func (manager *AutomationsManager) evaluate(running *runningAutomation, firedTimer string, run string, cause string) {
+// evaluate runs the graph once, runs the actions and starts the waits it decides, and logs every
+// decision with the values behind it. firedNode is the timer, sunrise, sunset or waitCheck that
+// fired ("" for a tag change, which says why in cause). runID is the id shown in the logs: empty
+// starts a new run, a waitCheck firing passes the id of the run that started the wait so the
+// chain keeps one id.
+func (manager *AutomationsManager) evaluate(running *runningAutomation, firedNode string, runID string, cause string) {
 	manager.mutex.Lock()
 	defer manager.mutex.Unlock()
 
 	if running.stopped {
 		return
 	}
-	if run == "" {
-		run = newRunID()
+	delete(running.waits, firedNode) // a wait that fired is over
+	if runID == "" {
+		runID = newRunID()
 	}
-	log := slog.With("run", run)
+	log := slog.With("run", runID)
 
 	// each tag is read once, so the logged value is the one the decision used
 	values := map[int]models.TagValue{}
@@ -171,85 +187,52 @@ func (manager *AutomationsManager) evaluate(running *runningAutomation, firedTim
 	for _, node := range running.Graph.Nodes {
 		names[node.ID] = manager.nodeName(node)
 	}
-	if firedTimer != "" {
-		cause = names[firedTimer] + " fired"
+	fired := firedNode != ""
+	if fired {
+		cause = names[firedNode] + " fired"
 	}
 
-	outputs := evaluateGraph(running.Graph, firedTimer, read)
-	inputs := inputsByNode(running.Graph)
-	// a timer or waitCheck firing counts as a new rise, even when the last evaluation was true too
-	fired := firedTimer != ""
-	// changed: something happened worth an info line (an action ran, a wait started or checked, an
-	// input of an action or wait rose or fell, a timer fired); otherwise the run logs at debug only
+	results := evaluateGraph(running.Graph, firedNode, read)
+
+	// changed: something happened worth an info line (a timer or wait fired, the input of an action
+	// or wait rose or fell); otherwise the run logs at debug only
 	changed := fired
 	conditions, outcomes := []step{}, []step{}
 	for _, node := range running.Graph.Nodes {
-		name := names[node.ID]
+		name, result, value := names[node.ID], results[node.ID], values[node.TagID]
+		wasOn := running.wasOn[node.ID]
+
 		switch {
 		case isAction(node.Type):
-			on := outputs[node.ID]
-			changed = changed || on != running.active[node.ID]
-			switch {
-			case !on:
-				outcomes = append(outcomes, step{node.ID, name + ": not run, no input is true" + pick(running.active[node.ID], " (it can run again on the next rise)", ""), true})
-			case fired || !running.active[node.ID]:
-				outcomes = append(outcomes, step{node.ID, name + ": RUN, " + pick(fired, cause, "an input became true"), true})
+			text, run := actionStep(result.input, wasOn, fired, cause)
+			if run {
 				go manager.runAction(log.With("node", node.ID), node, running.Name+": "+name)
-			default:
-				outcomes = append(outcomes, step{node.ID, name + ": not run, its input was already true on the last run", true})
 			}
-			running.active[node.ID] = on
+			outcomes = append(outcomes, step{node.ID, name + ": " + text, true})
 
 		case node.Type == models.NodeWaitCheck:
-			if firedTimer == node.ID {
-				conditions = append(conditions, step{node.ID, "check " + check(manager.tagName(node.TagID), node, values[node.TagID], outputs[node.ID]), true})
+			ownCheck := firedNode == node.ID
+			if ownCheck {
+				conditions = append(conditions, step{node.ID, "check " + check(manager.tagName(node.TagID), node, value, result.output), true})
 			}
-			on := false
-			for _, input := range inputs[node.ID] {
-				on = on || outputs[input]
-			}
-			changed = changed || on != running.active[node.ID]
-			// its own firing does not restart it, or a lasting match would repeat every delay
-			rise := on && (!running.active[node.ID] || (fired && firedTimer != node.ID))
-			switch {
-			case !on:
-				outcomes = append(outcomes, step{node.ID, name + ": not started, no input is true", true})
-			case !rise:
-				outcomes = append(outcomes, step{node.ID, name + pick(firedTimer == node.ID, ": not restarted, its own check does not start a new one", ": not started, its input was already true on the last run"), true})
-			case running.waits[node.ID] != nil:
-				outcomes = append(outcomes, step{node.ID, name + ": not started, one is already running", true})
-			default:
-				outcomes = append(outcomes, step{node.ID, name + ": STARTED", true})
-				waitID := node.ID
-				running.waits[waitID] = time.AfterFunc(time.Duration(node.DelaySeconds)*time.Second, func() {
-					manager.mutex.Lock()
-					delete(running.waits, waitID)
-					manager.mutex.Unlock()
-					manager.evaluate(running, waitID, run, "")
+			waiting := running.waits[node.ID] != nil
+			text, start := waitStep(result.input, wasOn, fired, ownCheck, waiting)
+			if start {
+				running.waits[node.ID] = time.AfterFunc(time.Duration(node.DelaySeconds)*time.Second, func() {
+					manager.evaluate(running, node.ID, runID, "")
 				})
 			}
-			running.active[node.ID] = on
+			outcomes = append(outcomes, step{node.ID, name + ": " + text, true})
 
-		case isEvent(node.Type):
+		default: // triggers and gates
 			// a timer that did not fire is only noise in the summary
-			conditions = append(conditions, step{node.ID, name + pick(outputs[node.ID], " fired ✓", " did not fire ✗"), outputs[node.ID]})
+			inSummary := !isEvent(node.Type) || result.output
+			conditions = append(conditions, step{node.ID, manager.conditionText(node, name, value, result), inSummary})
+		}
 
-		case node.Type == models.NodeTagValueFloat || node.Type == models.NodeTagValueBool:
-			conditions = append(conditions, step{node.ID, check(name, node, values[node.TagID], outputs[node.ID]), true})
-
-		case node.Type == models.NodeCondition:
-			inputsOn := true
-			for _, input := range inputs[node.ID] {
-				inputsOn = inputsOn && outputs[input]
-			}
-			if inputsOn {
-				conditions = append(conditions, step{node.ID, "if " + check(manager.tagName(node.TagID), node, values[node.TagID], outputs[node.ID]), true})
-			} else {
-				conditions = append(conditions, step{node.ID, name + " ✗ (its inputs are not all true)", true})
-			}
-
-		default: // and, or
-			conditions = append(conditions, step{node.ID, name + " " + mark(outputs[node.ID]), true})
+		if isAction(node.Type) || node.Type == models.NodeWaitCheck {
+			changed = changed || result.input != wasOn
+			running.wasOn[node.ID] = result.input
 		}
 	}
 
@@ -265,57 +248,38 @@ func (manager *AutomationsManager) evaluate(running *runningAutomation, firedTim
 	}
 }
 
-// nodeName describes a node in words for the logs, with the tag and device names:
-// "Captur battery", "turn off Captur plug", "wait 300s then Captur battery"
-func (manager *AutomationsManager) nodeName(node models.AutomationNode) string {
-	switch node.Type {
-	case models.NodeTimer:
-		return "timer " + node.Cron
-	case models.NodeSunrise, models.NodeSunset:
-		if node.OffsetMinutes == 0 {
-			return node.Type
-		}
-		return fmt.Sprintf("%s %+d min", node.Type, node.OffsetMinutes)
-	case models.NodeTagValueFloat, models.NodeTagValueBool:
-		return manager.tagName(node.TagID)
-	case models.NodeCondition:
-		return "if " + manager.tagName(node.TagID)
-	case models.NodeWaitCheck:
-		return fmt.Sprintf("wait %ds then %s", node.DelaySeconds, manager.tagName(node.TagID))
-	case models.NodeAnd:
-		return "AND"
-	case models.NodeOr:
-		return "OR"
-	case models.NodeWhatsApp:
-		text := []rune(node.Text)
-		if len(text) > 30 {
-			text = append(text[:30], '…')
-		}
-		return "WhatsApp " + strconv.Quote(string(text))
-	case models.NodeDevice:
-		return pick(node.On, "turn on ", "turn off ") + manager.deviceName(node.DeviceID)
-	case models.NodeHTTP:
-		return cmp.Or(node.Method, http.MethodGet) + " " + node.URL
+// actionStep decides whether an action runs, and says why in words. on and wasOn are its input now
+// and on the last evaluation. It runs when its input becomes true, and again on every timer or
+// wait firing while it is true.
+func actionStep(on bool, wasOn bool, fired bool, cause string) (text string, run bool) {
+	switch {
+	case !on:
+		return "not run, no input is true" + pick(wasOn, " (it can run again on the next rise)", ""), false
+	case fired:
+		return "RUN, " + cause, true
+	case !wasOn:
+		return "RUN, an input became true", true
 	}
-	return node.Type + " " + node.ID
+	return "not run, its input was already true on the last run", false
 }
 
-func (manager *AutomationsManager) tagName(tagID int) string {
-	if tag := manager.tags.findTag(tagID); tag != nil && tag.Name != "" {
-		return tag.Name
+// waitStep decides whether a waitCheck starts its delay, and says why in words. It starts when its
+// input becomes true, or on a timer or other wait firing while it is true; ownCheck is its own
+// delay ending, which does not start it again, or a lasting match would repeat every delay.
+// waiting is true while its delay runs.
+func waitStep(on bool, wasOn bool, fired bool, ownCheck bool, waiting bool) (text string, start bool) {
+	rise := !wasOn || (fired && !ownCheck)
+	switch {
+	case !on:
+		return "not started, no input is true", false
+	case !rise && ownCheck:
+		return "not restarted, its own check does not start a new one", false
+	case !rise:
+		return "not started, its input was already true on the last run", false
+	case waiting:
+		return "not started, one is already running", false
 	}
-	return "tag " + strconv.Itoa(tagID)
-}
-
-func (manager *AutomationsManager) deviceName(deviceID int) string {
-	if manager.devices != nil {
-		for _, device := range manager.devices.Devices() {
-			if fields := device.Fields(); fields.ID == deviceID && fields.Name != "" {
-				return fields.Name
-			}
-		}
-	}
-	return "device " + strconv.Itoa(deviceID)
+	return "STARTED", true
 }
 
 func (manager *AutomationsManager) lastValue(tagID int) models.TagValue {
@@ -342,11 +306,12 @@ func (manager *AutomationsManager) runAction(log *slog.Logger, node models.Autom
 			return
 		}
 		// skip the request when the relay is already in the wanted state; an unknown state still sends it
-		if on, err := device.RelayOn(ctx); err == nil && on == node.On {
+		on, err := device.RelayOn(ctx)
+		if err != nil {
+			log.Warn(name+": its state is unknown, sending anyway", "err", err)
+		} else if on == node.On {
 			log.Info(name + ": nothing sent, it is already " + pick(on, "on", "off"))
 			return
-		} else if err != nil {
-			log.Warn(name+": its state is unknown, sending anyway", "err", err)
 		}
 		if node.On {
 			device.TurnOn(ctx)

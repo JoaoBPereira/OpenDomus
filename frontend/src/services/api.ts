@@ -87,6 +87,22 @@ export const getTagValueFloatTimeSeries = async (
     return authenticatedFetch<TagValueTimeSeries[]>(`tagValueFloatTimeSeries/${tagId}/${startDate}/${endDate}/${interval}`);
 };
 
+export const getLatestTagValueLocation = async (tagId: number | string): Promise<TagValueLocation> => {
+    return authenticatedFetch<TagValueLocation>(`latestTagValueLocation/${tagId}`);
+};
+
+export const getLastTagValueLocation = async (tagId: number | string, count: number): Promise<TagValueLocation[]> => {
+    return authenticatedFetch<TagValueLocation[]>(`lastTagValueLocation/${tagId}/${count}`);
+};
+
+export const getTagValueLocation = async (
+    tagId: number | string,
+    startDate: string,
+    endDate: string
+): Promise<TagValueLocation[]> => {
+    return authenticatedFetch<TagValueLocation[]>(`lastTagValueLocation/${tagId}?${new URLSearchParams({ startDate, endDate })}`);
+};
+
 // ============= Power Consumption APIs =============
 
 export const getPowerConsumption = async (
@@ -177,7 +193,7 @@ export interface Tag {
     periodicityCount: number;
     expiresIn: number;
     enabled: boolean;
-    lastTagValue: TagValueFloat | TagValueBoolean;
+    lastTagValue: TagValueFloat | TagValueBoolean | TagValueLocation;
     displayIn: string[];
 }
 
@@ -185,6 +201,17 @@ export interface TagValueFloat {
     value: number;
     time: string;
     timestamp?: string;
+}
+
+export interface TagValueLocation {
+    id: number;
+    tagId: number;
+    latitude: number;
+    longitude: number;
+    accuracy: number | null;
+    altitude: number | null;
+    speed: number | null;
+    time: string;
 }
 
 export interface TagValueBoolean {

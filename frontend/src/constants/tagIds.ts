@@ -92,3 +92,4 @@ export const TAG_ENERGY_WASHING     = 48
 // ── Car ────────────────────────────────────────────────────────────────────
 export const TAG_CAR_CAPTUR_BATTERY = 33
 export const TAG_CAR_CAPTUR_PLUG    = 34
+export const TAG_CAR_CAPTUR_LOCATION = 52
