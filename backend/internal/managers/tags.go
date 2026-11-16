@@ -466,7 +466,13 @@ func (manager *TagsManager) LastTagValueBoolean(ctx context.Context, tagID int, 
 
 func (manager *TagsManager) LastTagValueLocation(ctx context.Context, tagID int, limit int) ([]models.TagValueLocation, error) {
 	var rows []models.TagValueLocation
-	err := manager.db.QueryInto(ctx, &rows, "SELECT tag_id AS tagId, latitude, longitude, accuracy, altitude, speed, time FROM tagvaluelocation WHERE tag_id = $1 ORDER BY time DESC LIMIT $2", tagID, limit)
+	err := manager.db.QueryInto(ctx, &rows, "SELECT id, tag_id AS tagId, latitude, longitude, accuracy, altitude, speed, time FROM tagvaluelocation WHERE tag_id = $1 ORDER BY time DESC LIMIT $2", tagID, limit)
+	return rows, err
+}
+
+func (manager *TagsManager) TagValueLocation(ctx context.Context, tagID int, begin string, end string) ([]models.TagValueLocation, error) {
+	var rows []models.TagValueLocation
+	err := manager.db.QueryInto(ctx, &rows, "SELECT id, tag_id AS tagId, latitude, longitude, accuracy, altitude, speed, time FROM tagvaluelocation WHERE tag_id = $1 AND time BETWEEN $2 AND $3 ORDER BY time ASC", tagID, begin, end)
 	return rows, err
 }
 

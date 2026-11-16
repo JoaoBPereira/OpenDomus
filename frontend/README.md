@@ -116,7 +116,9 @@ The backend URL is read at runtime from `public/config.json`, which holds `serve
 pointed at another server without rebuilding. Without it the app uses port 4000 of the
 host it is served from. Optional `sunLat` and `sunLon` (decimal degrees, east positive,
 e.g. `40.21` / `-8.43` for Coimbra) set the location for the sunrise and sunset times in
-the top bar; they default to Lisbon.
+the top bar; they default to Lisbon. Optional `googleMapsApiKey` (a Google Maps JavaScript
+API key, restricted to this site's HTTP referrer) draws the car's route of the last 24 hours
+in the car dialog; without it the map shows only the latest position.
 
 ```bash
 npm install

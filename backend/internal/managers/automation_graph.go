@@ -3,8 +3,6 @@ package managers
 import (
 	"fmt"
 	"net/url"
-	"strconv"
-	"strings"
 
 	"od/internal/models"
 	"od/internal/schedule"
@@ -15,8 +13,13 @@ func isEvent(nodeType string) bool {
 	return nodeType == models.NodeTimer || nodeType == models.NodeSunrise || nodeType == models.NodeSunset
 }
 
+// watchesTag is true for the triggers that evaluate the graph on every new value of their tag
+func watchesTag(nodeType string) bool {
+	return nodeType == models.NodeTagValueFloat || nodeType == models.NodeTagValueBool
+}
+
 func isTrigger(nodeType string) bool {
-	return isEvent(nodeType) || nodeType == models.NodeTagValueFloat || nodeType == models.NodeTagValueBool
+	return isEvent(nodeType) || watchesTag(nodeType)
 }
 
 // matches compares the last value of a tag with the node: a float with Operator and Value, a
@@ -179,97 +182,62 @@ func inputsByNode(graph models.AutomationGraph) map[string][]string {
 	return inputs
 }
 
-// evaluateGraph returns the output of every node of a validated graph. A timer, sunrise or sunset
-// is true only when it is the one firing (firedTimer); a tagValueFloat/tagValueBoolean matches the last
-// value of its tag (false when the tag has no value); an action is true when one of its inputs is.
-func evaluateGraph(graph models.AutomationGraph, firedTimer string, lastValue func(tagID int) models.TagValue) map[string]bool {
+// nodeResult is what one evaluation found for a node. input is its inputs taken together: all of
+// them for an and/condition, any of them for the other nodes (false for a trigger, which has
+// none). output is what the node passes on to the next ones.
+type nodeResult struct {
+	input  bool
+	output bool
+}
+
+// evaluateGraph returns the input and output of every node of a validated graph. firedNode is the
+// timer, sunrise, sunset or waitCheck that is firing ("" when a tag change evaluates the graph).
+func evaluateGraph(graph models.AutomationGraph, firedNode string, lastValue func(tagID int) models.TagValue) map[string]nodeResult {
 	nodes := map[string]models.AutomationNode{}
 	for _, node := range graph.Nodes {
 		nodes[node.ID] = node
 	}
 	inputs := inputsByNode(graph)
-	outputs := map[string]bool{}
+	results := map[string]nodeResult{}
 
-	var output func(id string) bool
-	output = func(id string) bool {
-		if result, found := outputs[id]; found {
+	var evaluate func(id string) nodeResult
+	evaluate = func(id string) nodeResult {
+		if result, found := results[id]; found {
 			return result
 		}
 		node := nodes[id]
-		result := false
+
+		needsAll := node.Type == models.NodeAnd || node.Type == models.NodeCondition
+		input := needsAll
+		for _, from := range inputs[id] {
+			if needsAll {
+				input = evaluate(from).output && input
+			} else {
+				input = evaluate(from).output || input
+			}
+		}
+
+		output := input // and, or, and the actions
 		switch {
 		case isEvent(node.Type):
-			result = id == firedTimer
-		case node.Type == models.NodeTagValueFloat || node.Type == models.NodeTagValueBool:
-			result = matches(node, lastValue(node.TagID))
-		case node.Type == models.NodeWaitCheck:
-			// true only on its own delayed check (firedTimer), see AutomationsManager.evaluate
-			result = id == firedTimer && matches(node, lastValue(node.TagID))
-		case node.Type == models.NodeAnd || node.Type == models.NodeCondition:
-			result = true
-			for _, input := range inputs[id] {
-				result = output(input) && result
-			}
+			// true only when it is the one firing
+			output = id == firedNode
+		case watchesTag(node.Type):
+			// true while the last value of its tag matches (false when the tag has no value)
+			output = matches(node, lastValue(node.TagID))
+		case node.Type == models.NodeCondition:
 			// a condition only reads the tag: unlike tagValueFloat, new values do not evaluate the graph
-			if node.Type == models.NodeCondition && result {
-				result = matches(node, lastValue(node.TagID))
-			}
-		default: // or, and the actions
-			for _, input := range inputs[id] {
-				result = output(input) || result
-			}
+			output = input && matches(node, lastValue(node.TagID))
+		case node.Type == models.NodeWaitCheck:
+			// true only on its own delayed check, see AutomationsManager.evaluate
+			output = id == firedNode && matches(node, lastValue(node.TagID))
 		}
-		outputs[id] = result
-		return result
+
+		results[id] = nodeResult{input, output}
+		return results[id]
 	}
 	for id := range nodes {
-		output(id)
+		evaluate(id)
 	}
-	return outputs
-}
-
-func pick(condition bool, yes string, no string) string {
-	if condition {
-		return yes
-	}
-	return no
-}
-
-func mark(ok bool) string {
-	return pick(ok, "✓", "✗")
-}
-
-// check shows a tag test with the value it read, for the logs: "Captur battery 82 > 80 ✓",
-// "Gate open is false, wants true ✗", "Captur battery has no value ✗"
-func check(name string, node models.AutomationNode, value models.TagValue, ok bool) string {
-	switch value := value.(type) {
-	case *models.TagValueFloat:
-		if value != nil {
-			return name + " " + strconv.FormatFloat(value.Value, 'f', -1, 64) + " " + node.Operator + " " + strconv.FormatFloat(node.Value, 'f', -1, 64) + " " + mark(ok)
-		}
-	case *models.TagValueBoolean:
-		if value != nil {
-			return name + " is " + strconv.FormatBool(value.Value) + ", wants " + strconv.FormatBool(node.BoolValue) + " " + mark(ok)
-		}
-	}
-	return name + " has no value " + mark(ok)
-}
-
-// step is the decision of one node in words. summary is false for the steps that only add noise to
-// the one-line summary of a run (the triggers that did not fire).
-type step struct {
-	node    string // id, to find the node in the editor
-	text    string
-	summary bool
-}
-
-// joinSteps joins the summary steps: "Captur battery 82 > 80 ✓, AND ✓"
-func joinSteps(steps []step, separator string) string {
-	texts := []string{}
-	for _, step := range steps {
-		if step.summary {
-			texts = append(texts, step.text)
-		}
-	}
-	return strings.Join(texts, separator)
+	return results
 }

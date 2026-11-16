@@ -6,7 +6,7 @@ set -eu
 html=/usr/share/nginx/html
 
 if [ -n "${BACKEND_SERVER_URL:-}" ]; then
-  printf '{\n  "serverURL": "%s",\n  "priceKwh": %s\n}\n' "$BACKEND_SERVER_URL" "${PRICE_KWH:-0}" > "$html/frontend/config.json"
+  printf '{\n  "serverURL": "%s",\n  "priceKwh": %s, \n "googleMapsApiKey": "%s" \n }\n' "$BACKEND_SERVER_URL" "${PRICE_KWH:-0}" "$GOOGLE_MAPS_API_KEY" > "$html/frontend/config.json"
   printf '{\n  "serverUrl": "%s"\n}\n' "$BACKEND_SERVER_URL" > "$html/bo/config.json"
   echo "config.json written for $BACKEND_SERVER_URL"
 fi

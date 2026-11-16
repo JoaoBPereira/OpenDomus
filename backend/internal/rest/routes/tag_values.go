@@ -146,6 +146,31 @@ func (h *Handlers) registerTagValues(mux *http.ServeMux) {
 		SendJSON(response, http.StatusOK, value)
 	}))
 
+	HandleFunc(mux, "GET /lastTagValueLocation/{id}/{limit}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
+		id, ok := ParseIDParam(response, request, "id")
+		if !ok {
+			return
+		}
+		rows, err := h.Tags.LastTagValueLocation(request.Context(), id, parseLimit(request.PathValue("limit")))
+		sendListOrZero(response, rows, err, "Error fetching locations.")
+	}))
+
+	// ?startDate=...&endDate=... (both required), oldest first
+	HandleFunc(mux, "GET /lastTagValueLocation/{id}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
+		id, ok := ParseIDParam(response, request, "id")
+		if !ok {
+			return
+		}
+		query := request.URL.Query()
+		startDate, endDate := query.Get("startDate"), query.Get("endDate")
+		if startDate == "" || endDate == "" {
+			SendMessage(response, http.StatusBadRequest, "startDate and endDate are required.")
+			return
+		}
+		rows, err := h.Tags.TagValueLocation(request.Context(), id, startDate, endDate)
+		sendListOrZero(response, rows, err, "Error fetching locations.")
+	}))
+
 	HandleFunc(mux, "GET /saveTagValue/{id}/{value}/{apikey}", func(response http.ResponseWriter, request *http.Request) {
 		if !h.checkSaveAPIKey(response, request) {
 			return

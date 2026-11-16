@@ -8,6 +8,7 @@
     label: string;
     batteryTagId: number;
     plugTagId: number;
+    locationTagId: number;
   }>();
 
   const openChart = inject(openChartKey)!;
@@ -41,7 +42,7 @@
   const description = computed(() => `${props.label} battery ${batteryText.value}%. ${plugText.value}. Show chart`);
 
   function onCardClick() {
-    openChart(props.batteryTagId.toString(), props.label, 0, 100);
+    openChart(props.batteryTagId.toString(), props.label, 0, 100, props.locationTagId);
   }
 
   onMounted(() => {
