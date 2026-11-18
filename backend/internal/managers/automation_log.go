@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -93,27 +94,31 @@ func check(name string, node models.AutomationNode, value models.TagValue, ok bo
 }
 
 // step is the decision of one node in words. summary is false for the steps that only add noise to
-// the one-line summary of a run (the triggers that did not fire).
+// the info logs of a run (the triggers that did not fire).
 type step struct {
 	node    string // id, to find the node in the editor
 	text    string
 	summary bool
 }
 
-// joinSteps joins the summary steps: "Captur battery 82 > 80 ✓, AND ✓"
-func joinSteps(steps []step, separator string) string {
-	texts := []string{}
-	for _, step := range steps {
-		if step.summary {
-			texts = append(texts, step.text)
+// inputTypes names the inputs of a node by their node type, each type once: "timer or and"; with
+// onlyTrue only the inputs whose output is true
+func inputTypes(inputs []string, types map[string]string, results map[string]nodeResult, onlyTrue bool) string {
+	kinds := []string{}
+	for _, input := range inputs {
+		if (!onlyTrue || results[input].output) && !slices.Contains(kinds, types[input]) {
+			kinds = append(kinds, types[input])
 		}
 	}
-	return strings.Join(texts, separator)
+	if len(kinds) == 0 {
+		return "input"
+	}
+	return strings.Join(kinds, " or ")
 }
 
 // conditionText says in words what a trigger or a gate decided: "sunset fired ✓",
 // "Captur battery 82 > 80 ✓", "if Gate open is false, wants true ✗", "AND ✓"
-func (manager *AutomationsManager) conditionText(node models.AutomationNode, name string, value models.TagValue, result nodeResult) string {
+func (manager *AutomationsManager) conditionText(node models.AutomationNode, name string, value models.TagValue, result nodeResult, inputs string) string {
 	switch {
 	case isEvent(node.Type):
 		return name + pick(result.output, " fired ✓", " did not fire ✗")
@@ -122,7 +127,7 @@ func (manager *AutomationsManager) conditionText(node models.AutomationNode, nam
 	case node.Type == models.NodeCondition && result.input:
 		return "if " + check(manager.tagName(node.TagID), node, value, result.output)
 	case node.Type == models.NodeCondition:
-		return name + " ✗ (its inputs are not all true)"
+		return name + " ✗ (not all of its " + inputs + " inputs are true)"
 	}
 	return name + " " + mark(result.output) // and, or
 }

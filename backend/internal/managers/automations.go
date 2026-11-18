@@ -183,9 +183,10 @@ func (manager *AutomationsManager) evaluate(running *runningAutomation, firedNod
 		values[tagID] = value
 		return value
 	}
-	names := map[string]string{}
+	names, types := map[string]string{}, map[string]string{}
 	for _, node := range running.Graph.Nodes {
 		names[node.ID] = manager.nodeName(node)
+		types[node.ID] = node.Type
 	}
 	fired := firedNode != ""
 	if fired {
@@ -193,6 +194,9 @@ func (manager *AutomationsManager) evaluate(running *runningAutomation, firedNod
 	}
 
 	results := evaluateGraph(running.Graph, firedNode, read)
+	inputs := inputsByNode(running.Graph)
+	// kinds names the inputs of a node by type for the logs ("timer or and"), all or only the true ones
+	kinds := func(id string, onlyTrue bool) string { return inputTypes(inputs[id], types, results, onlyTrue) }
 
 	// changed: something happened worth an info line (a timer or wait fired, the input of an action
 	// or wait rose or fell); otherwise the run logs at debug only
@@ -204,7 +208,7 @@ func (manager *AutomationsManager) evaluate(running *runningAutomation, firedNod
 
 		switch {
 		case isAction(node.Type):
-			text, run := actionStep(result.input, wasOn, fired, cause)
+			text, run := actionStep(result.input, wasOn, fired, cause, kinds(node.ID, false), kinds(node.ID, true))
 			if run {
 				go manager.runAction(log.With("node", node.ID), node, running.Name+": "+name)
 			}
@@ -216,7 +220,7 @@ func (manager *AutomationsManager) evaluate(running *runningAutomation, firedNod
 				conditions = append(conditions, step{node.ID, "check " + check(manager.tagName(node.TagID), node, value, result.output), true})
 			}
 			waiting := running.waits[node.ID] != nil
-			text, start := waitStep(result.input, wasOn, fired, ownCheck, waiting)
+			text, start := waitStep(result.input, wasOn, fired, ownCheck, waiting, kinds(node.ID, false), kinds(node.ID, true))
 			if start {
 				running.waits[node.ID] = time.AfterFunc(time.Duration(node.DelaySeconds)*time.Second, func() {
 					manager.evaluate(running, node.ID, runID, "")
@@ -227,7 +231,7 @@ func (manager *AutomationsManager) evaluate(running *runningAutomation, firedNod
 		default: // triggers and gates
 			// a timer that did not fire is only noise in the summary
 			inSummary := !isEvent(node.Type) || result.output
-			conditions = append(conditions, step{node.ID, manager.conditionText(node, name, value, result), inSummary})
+			conditions = append(conditions, step{node.ID, manager.conditionText(node, name, value, result, kinds(node.ID, false)), inSummary})
 		}
 
 		if isAction(node.Type) || node.Type == models.NodeWaitCheck {
@@ -236,46 +240,52 @@ func (manager *AutomationsManager) evaluate(running *runningAutomation, firedNod
 		}
 	}
 
-	// one readable line per run; at debug also one line per node, with its id for the editor
-	summary := running.Name + ": " + joinSteps(conditions, ", ") + " → " + joinSteps(outcomes, "; ")
+	// one line per decision, with the node id for the editor: at info when something changed (but
+	// never the timers that did not fire, only noise), otherwise at debug
+	logStep := log.Debug
 	if changed {
-		log.Info(summary, "cause", cause)
+		logStep = log.Info
+		log.Info(running.Name+": run", "cause", cause)
 	} else {
-		log.Debug(summary+" (nothing changed)", "cause", cause)
+		log.Debug(running.Name+": run (nothing changed)", "cause", cause)
 	}
 	for _, step := range append(conditions, outcomes...) {
-		log.Debug(running.Name+": "+step.text, "node", step.node)
+		if step.summary {
+			logStep(running.Name+": "+step.text, "node", step.node)
+		} else {
+			log.Debug(running.Name+": "+step.text, "node", step.node)
+		}
 	}
 }
 
 // actionStep decides whether an action runs, and says why in words. on and wasOn are its input now
 // and on the last evaluation. It runs when its input becomes true, and again on every timer or
-// wait firing while it is true.
-func actionStep(on bool, wasOn bool, fired bool, cause string) (text string, run bool) {
+// wait firing while it is true. all and trueOnes name its inputs by type (see inputTypes).
+func actionStep(on bool, wasOn bool, fired bool, cause string, all string, trueOnes string) (text string, run bool) {
 	switch {
 	case !on:
-		return "not run, no input is true" + pick(wasOn, " (it can run again on the next rise)", ""), false
+		return "not run, no " + all + " is true" + pick(wasOn, " (it can run again on the next rise)", ""), false
 	case fired:
 		return "RUN, " + cause, true
 	case !wasOn:
-		return "RUN, an input became true", true
+		return "RUN, " + trueOnes + " became true", true
 	}
-	return "not run, its input was already true on the last run", false
+	return "not run, its " + trueOnes + " was already true on the last run", false
 }
 
 // waitStep decides whether a waitCheck starts its delay, and says why in words. It starts when its
 // input becomes true, or on a timer or other wait firing while it is true; ownCheck is its own
 // delay ending, which does not start it again, or a lasting match would repeat every delay.
 // waiting is true while its delay runs.
-func waitStep(on bool, wasOn bool, fired bool, ownCheck bool, waiting bool) (text string, start bool) {
+func waitStep(on bool, wasOn bool, fired bool, ownCheck bool, waiting bool, all string, trueOnes string) (text string, start bool) {
 	rise := !wasOn || (fired && !ownCheck)
 	switch {
 	case !on:
-		return "not started, no input is true", false
+		return "not started, no " + all + " is true", false
 	case !rise && ownCheck:
 		return "not restarted, its own check does not start a new one", false
 	case !rise:
-		return "not started, its input was already true on the last run", false
+		return "not started, its " + trueOnes + " was already true on the last run", false
 	case waiting:
 		return "not started, one is already running", false
 	}

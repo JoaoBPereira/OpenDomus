@@ -4,7 +4,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { Notify } from 'quasar';
 import type { Automation } from '@/components/models';
-import { getAutomations, updateAutomation } from '../../services';
+import { getAutomations, getLogs, updateAutomation } from '../../services';
 import { nodeInfo, summary, timeTriggers, valueTriggers } from '@/components/automation/graph';
 import { useAutomationNames } from '@/components/automation/names';
 
@@ -33,7 +33,37 @@ const columns: any[] = [
   { name: 'triggers', label: 'Triggers', align: 'left', field: 'id' },
   { name: 'actions', label: 'Actions', align: 'left', field: 'id' },
   { name: 'enabled', label: 'Enabled', align: 'left', field: 'enabled' },
+  { name: 'lastRun', label: 'View Last Run', align: 'left', field: 'id' },
 ];
+
+// the logs of the last run of the automation shown in the dialog
+const lastRun = ref<{ name: string; logs: any[] } | null>(null);
+
+// every run logs "<name>: ..." with run=<id>: find the newest run id, then all the lines of that run
+async function viewLastRun(automation: Automation) {
+  try {
+    const prefix = automation.name + ': ';
+    const recent = await getLogs(prefix, 0, 100);
+    const run = recent.rows
+      .filter((row: any) => row.message?.includes(prefix))
+      .map((row: any) => /\brun=(\w+)/.exec(row.message)?.[1])
+      .find(Boolean);
+    let logs: any[] = [];
+    if (run) {
+      const res = await getLogs('run=' + run, 0, 1000);
+      // run ids are short and can repeat across automations, so keep this automation's lines
+      logs = res.rows
+        .filter((row: any) => row.message?.includes(prefix) && new RegExp('\\brun=' + run + '\\b').test(row.message))
+        .reverse();
+    }
+    lastRun.value = { name: automation.name, logs };
+  } catch (err: any) {
+    Notify.create({
+      type: 'negative',
+      message: 'Failed to load the last run: ' + (err?.message || String(err)),
+    });
+  }
+}
 
 function triggers(automation: Automation) {
   return automation.graph.nodes
@@ -119,8 +149,30 @@ onMounted(() => {
               @update:model-value="(value) => setEnabled(slot.row, value)"
             />
           </q-td>
+          <q-td auto-width @click.stop>
+            <q-btn flat dense icon="history" label="View" @click="viewLastRun(slot.row)" />
+          </q-td>
         </q-tr>
       </template>
     </q-table>
+
+    <q-dialog :model-value="lastRun !== null" @update:model-value="lastRun = null">
+      <q-card v-if="lastRun" style="min-width: 60vw; max-width: 90vw">
+        <q-card-section class="text-h6">Last run: {{ lastRun.name }}</q-card-section>
+        <q-card-section v-if="!lastRun.logs.length">No run found in the logs.</q-card-section>
+        <q-markup-table v-else flat dense wrap-cells>
+          <tbody>
+            <tr v-for="(log, index) in lastRun.logs" :key="index">
+              <td class="text-no-wrap">{{ log.date }}</td>
+              <td>{{ log.level }}</td>
+              <td>{{ log.message }}</td>
+            </tr>
+          </tbody>
+        </q-markup-table>
+        <q-card-actions align="right">
+          <q-btn flat label="Close" v-close-popup />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>

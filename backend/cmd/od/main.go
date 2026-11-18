@@ -2,7 +2,7 @@
 // serves the REST and MCP APIs.
 //
 //	go run ./cmd/od            # reads .env from the parent directory
-//	go run ./cmd/od --debug    # keep tag values in memory only (no tag value writes)
+//	go run ./cmd/od --debug    # keep tag values in memory only (no tag value or log writes)
 package main
 
 import (
@@ -24,7 +24,7 @@ import (
 )
 
 func main() {
-	debug := flag.Bool("debug", false, "keep tag values in memory only (no tag value writes)")
+	debug := flag.Bool("debug", false, "keep tag values in memory only (no tag value or log writes)")
 	flag.Parse()
 
 	godotenv.Load("../.env") // the .env sits in the repo root, shared with the other services
@@ -57,8 +57,11 @@ func run(cfg *config.Config, debug bool) error {
 	if err := db.Migrate(ctx); err != nil {
 		return err
 	}
-	logger.SetDatabase(db)
-	defer logger.SetDatabase(nil) // runs before db.Close (deferred calls run last in, first out)
+	// --debug (the F5 launch in the IDE) keeps the logs out of the database: console and file only
+	if !debug {
+		logger.SetDatabase(db)
+		defer logger.SetDatabase(nil) // runs before db.Close (deferred calls run last in, first out)
+	}
 
 	app := newApp(cfg, db, debug)
 	if err := app.Start(ctx); err != nil {
