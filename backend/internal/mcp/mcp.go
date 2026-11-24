@@ -119,7 +119,7 @@ func (s *Server) newServer() *mcpsdk.Server {
 	}, func(ctx context.Context, request *mcpsdk.CallToolRequest, input any) (*mcpsdk.CallToolResult, any, error) {
 		tags := []map[string]any{}
 		for _, tag := range s.tags.Tags() {
-			tags = append(tags, map[string]any{"id": tag.ID, "name": tag.Name, "type": tag.Type, "valueType": tag.ValueType, "lastTagValue": tag.LastValue()})
+			tags = append(tags, map[string]any{"id": tag.ID, "name": tag.Name, "type": tag.Type, "valueType": tag.ValueType, "latestTagValue": tag.GetLatestValue()})
 		}
 		return jsonResult(tags), nil, nil
 	})
@@ -138,7 +138,7 @@ func (s *Server) newServer() *mcpsdk.Server {
 		if tag == nil {
 			return textResult(fmt.Sprintf("Tag with id %d not found.", input.TagID)), nil, nil
 		}
-		return jsonResult(map[string]any{"id": tag.ID, "name": tag.Name, "lastTagValue": tag.LastValue()}), nil, nil
+		return jsonResult(map[string]any{"id": tag.ID, "name": tag.Name, "latestTagValue": tag.GetLatestValue()}), nil, nil
 	})
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{

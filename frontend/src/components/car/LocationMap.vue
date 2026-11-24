@@ -2,6 +2,7 @@
   import { onMounted, ref } from 'vue';
 
   import { getLatestTagValueLocation, getTagValueLocation } from '../../services/api';
+  import { formatDateTime } from '../../utils';
 
   const props = defineProps<{
     tagId: number;
@@ -22,7 +23,7 @@
       undefined,
     );
     const battery = nearest ? `${Math.round(nearest.value)}%` : 'unknown';
-    return `${at.toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}\nBattery: ${battery}`;
+    return `${formatDateTime(at)}\nBattery: ${battery}`;
   };
 
   const mapElement = ref<HTMLElement>();

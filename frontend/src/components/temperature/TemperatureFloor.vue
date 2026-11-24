@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import { computed, inject } from 'vue';
   import { openChartKey } from '../../composables/useOpenChart';
+  import { formatDateTime } from '../../utils';
   import { formatDelta, temperatureTone, type Room, type TemperatureReading, type TemperatureReadings } from './temperatureData';
 
   const props = defineProps<{
@@ -54,7 +55,7 @@
       room.name,
       reading?.value !== undefined ? `${reading.value.toFixed(1)} degrees Celsius` : status,
       `Last hour: ${delta}`,
-      reading?.timestamp ? `Updated ${reading.timestamp.toLocaleString()}` : '',
+      reading?.timestamp ? `Updated ${formatDateTime(reading.timestamp)}` : '',
       room.shared ? 'Shared with Living Room' : '',
       reading?.error ?? reading?.historyError ?? '',
       reading?.stale ? 'Reading is more than 24 hours old' : '',

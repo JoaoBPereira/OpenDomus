@@ -15,6 +15,7 @@
   import Modal from '../components/ui/Modal.vue';
   import LocationMap from '../components/car/LocationMap.vue';
   import { getTagValueFloat, getTagValueFloatTimeSeries } from '../services/api';
+  import { formatDateTime } from '../utils';
 
   interface ChartPoint {
     value: number;
@@ -42,6 +43,7 @@
 
   // The day picked in the accordion (yyyy-mm-dd); empty shows the last 24 hours.
   const selectedDay = ref('');
+  const dayInput = ref<HTMLInputElement>();
   // Today as yyyy-mm-dd in local time (the Swedish locale formats dates that way).
   const today = () => new Date().toLocaleDateString('sv-SE');
   const chartTagId = ref('');
@@ -59,7 +61,6 @@
     lineData.value = (Array.isArray(json) ? json : []).map((element) => ({ value: element.value, date: new Date(element.time) }));
   }
 
-
   const lineOption = computed(() => ({
     backgroundColor: 'transparent',
     grid: { left: 60, right: 20, top: 20, bottom: 30 },
@@ -70,6 +71,8 @@
     xAxis: {
       type: 'time',
       axisLabel,
+      // Also the tooltip header of the axis trigger.
+      axisPointer: { label: { formatter: ({ value }: { value: number }) => formatDateTime(new Date(value)) } },
       axisLine: { lineStyle: { color: '#888888' } },
       axisTick: { show: false },
     },
@@ -104,6 +107,8 @@
     xAxis: {
       type: 'time',
       axisLabel,
+      // Also the tooltip header of the axis trigger.
+      axisPointer: { label: { formatter: ({ value }: { value: number }) => formatDateTime(new Date(value)) } },
       axisLine: { lineStyle: { color: '#888888' } },
       axisTick: { show: false },
     },
@@ -142,7 +147,7 @@
   async function openChart(tagId: string, title: string, lowerLimit = 10, upperLimit = 30, withLocationTagId?: number) {
     locationTagId.value = withLocationTagId;
     expanded.value = 'chart';
-    selectedDay.value = today();
+    selectedDay.value = '';
     chartTagId.value = tagId;
 
     chartLowerLimit.value = lowerLimit;
@@ -153,7 +158,7 @@
 
     dialogTitle.value = title;
     if (tempValues.length > 0) {
-      dialogTitle.value = `${title} - Last Update: ${tempValues[tempValues.length - 1].date.toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}`;
+      dialogTitle.value = `${title} - Last Update: ${formatDateTime(tempValues[tempValues.length - 1].date)}`;
     }
 
     chartType.value = 0;
@@ -194,7 +199,7 @@
 
     dialogTitle.value = title;
     if (tempValuesAvg.length > 0) {
-      dialogTitle.value = `${title} - Last Update: ${tempValuesAvg[tempValuesAvg.length - 1].date.toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}`;
+      dialogTitle.value = `${title} - Last Update: ${formatDateTime(tempValuesAvg[tempValuesAvg.length - 1].date)}`;
     }
 
     chartType.value = 1;
@@ -242,11 +247,14 @@
 
     <Modal :open="showDialog" :title="dialogTitle" @close="closeDialog">
       <div v-if="chartType === 0 && locationTagId !== undefined" class="accordion">
-        <label class="dayPicker">
+        <div class="dayPicker">
           Day
-          <input v-model="selectedDay" type="date" @change="loadLine" />
-          <span v-if="!selectedDay">(last 24h)</span>
-        </label>
+          <!-- The native input can't show dd-mm-yyyy, so this button shows it and opens the input's calendar (which also has Clear). -->
+          <button type="button" @click="dayInput?.showPicker()">
+            {{ selectedDay ? selectedDay.split('-').reverse().join('-') : '(last 24h)' }}
+          </button>
+          <input ref="dayInput" v-model="selectedDay" type="date" tabindex="-1" aria-hidden="true" @change="loadLine" />
+        </div>
         <button type="button" :aria-expanded="expanded === 'chart'" @click="expanded = 'chart'">Battery</button>
         <VChart v-if="expanded === 'chart'" class="accordionPanel" :option="lineOption" autoresize />
         <button type="button" :aria-expanded="expanded === 'map'" @click="expanded = 'map'">Location</button>
@@ -263,7 +271,7 @@
         />
       </div>
       <div v-else style="width: 100%; height: 100%">
-        <VChart v-if="chartType === 0":option="lineOption" autoresize style="width: 100%; height: 100%" />
+        <VChart v-if="chartType === 0" :option="lineOption" autoresize style="width: 100%; height: 100%" />
         <VChart v-else :option="scatterOption" autoresize style="width: 100%; height: 100%" />
       </div>
     </Modal>
@@ -359,14 +367,28 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      position: relative;
 
-      input {
+      button {
         padding: 4px 8px;
         border: 1px solid #444444;
         border-radius: 4px;
         background: #1a1a1a;
         color: #ffffff;
         font: inherit;
+        cursor: pointer;
+      }
+
+      // Kept rendered (not display: none) so the calendar opens anchored here.
+      input {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 0;
+        height: 0;
+        padding: 0;
+        border: 0;
+        opacity: 0;
         color-scheme: dark;
       }
     }

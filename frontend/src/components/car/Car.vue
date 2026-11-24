@@ -1,7 +1,7 @@
 <script setup lang="ts">
   import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue';
 
-  import { getLastTagValueBoolean, getLatestTagValueFloat } from '../../services/api';
+  import { getTagValueBooleanHistory, getLatestTagValueFloat } from '../../services/api';
   import { openChartKey } from '../../composables/useOpenChart';
 
   const props = defineProps<{
@@ -26,7 +26,7 @@
       battery.value = Number(json.value);
     });
 
-    getLastTagValueBoolean(props.plugTagId, 1).then((json) => {
+    getTagValueBooleanHistory(props.plugTagId, 1).then((json) => {
       pluggedIn.value = Boolean(json[0]?.value);
     });
   };

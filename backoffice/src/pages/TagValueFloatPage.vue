@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue';
 import type { TagValueFloat } from '@/components/models';
-import { Notify } from 'quasar';
+import { Notify, date } from 'quasar';
 import { useRoute } from 'vue-router';
 import { getTagValueFloat } from '../../services';
 
@@ -28,7 +28,7 @@ const columns: any[] = [
     align: 'left',
     field: 'time',
     sortable: true,
-    format: (val: string) => (val ? new Date(val).toLocaleString(undefined, { hour12: false }) : 'N/A'),
+    format: (val: string) => (val ? date.formatDate(val, 'DD-MM-YYYY HH:mm:ss') : 'N/A'),
   },
   {
     name: 'value',
@@ -149,7 +149,7 @@ watch(
             {{ props.row.tagId ?? props.row.tagid ?? props.row.tag_Id ?? 'N/A' }}
           </q-td>
           <q-td key="time">
-            {{ props.row.time ? new Date(props.row.time).toLocaleString(undefined, { hour12: false }) : 'N/A' }}
+            {{ props.row.time ? date.formatDate(props.row.time, 'DD-MM-YYYY HH:mm:ss') : 'N/A' }}
           </q-td>
           <q-td key="value" class="text-right">
             {{ props.row.value }}

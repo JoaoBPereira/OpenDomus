@@ -63,12 +63,12 @@ func (fields *PowerDeviceFields) CurrentPower() TagValue {
 	if fields.CurrentTag == nil {
 		return nil
 	}
-	return fields.CurrentTag.LastValue()
+	return fields.CurrentTag.GetLatestValue()
 }
 
 func (fields *PowerDeviceFields) TotalPower() TagValue {
 	if fields.TotalTag == nil {
 		return nil
 	}
-	return fields.TotalTag.LastValue()
+	return fields.TotalTag.GetLatestValue()
 }

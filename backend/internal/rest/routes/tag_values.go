@@ -23,8 +23,8 @@ func sendListOrZero[T any](response http.ResponseWriter, rows []T, err error, fa
 	SendJSON(response, http.StatusOK, rows)
 }
 
-// parseLimit reads the {limit} parameter: 1 to 1000, default 1
-func parseLimit(text string) int {
+// parseCount reads the {count} parameter: 1 to 1000, default 1
+func parseCount(text string) int {
 	return min(max(1, intParam(text, 1)), 1000)
 }
 
@@ -61,12 +61,18 @@ func (h *Handlers) registerTagValues(mux *http.ServeMux) {
 		SendJSON(response, http.StatusOK, value)
 	}))
 
-	HandleFunc(mux, "GET /nearestTagValueFloat/{id}/{timestamp}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
+	// ?timestamp=... (required)
+	HandleFunc(mux, "GET /nearestTagValueFloat/{id}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
 		id, ok := ParseIDParam(response, request, "id")
 		if !ok {
 			return
 		}
-		value, err := h.Tags.NearestTagValueFloat(request.Context(), id, request.PathValue("timestamp"))
+		timestamp := request.URL.Query().Get("timestamp")
+		if timestamp == "" {
+			SendMessage(response, http.StatusBadRequest, "timestamp is required.")
+			return
+		}
+		value, err := h.Tags.NearestTagValueFloat(request.Context(), id, timestamp)
 		if errors.Is(err, managers.ErrNotFound) {
 			SendText(response, http.StatusOK, "0")
 			return
@@ -78,21 +84,31 @@ func (h *Handlers) registerTagValues(mux *http.ServeMux) {
 		SendJSON(response, http.StatusOK, value)
 	}))
 
-	HandleFunc(mux, "GET /lastTagValueFloat/{id}/{limit}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
+	// ?count=1&offset=0 (count 1 to 1000, default 1), newest first
+	HandleFunc(mux, "GET /tagValueFloatHistory/{id}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
 		id, ok := ParseIDParam(response, request, "id")
 		if !ok {
 			return
 		}
-		rows, err := h.Tags.LastTagValueFloat(request.Context(), id, parseLimit(request.PathValue("limit")))
+		query := request.URL.Query()
+		offset := max(0, intParam(query.Get("offset"), 0))
+		rows, err := h.Tags.TagValueFloatHistory(request.Context(), id, parseCount(query.Get("count")), offset)
 		sendListOrZero(response, rows, err, "Error fetching values.")
 	}))
 
-	HandleFunc(mux, "GET /tagValueFloat/{id}/{timestampBegin}/{timestampEnd}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
+	// ?timestampBegin=...&timestampEnd=... (both required)
+	HandleFunc(mux, "GET /tagValueFloatRange/{id}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
 		id, ok := ParseIDParam(response, request, "id")
 		if !ok {
 			return
 		}
-		rows, err := h.Tags.TagValueFloat(request.Context(), id, request.PathValue("timestampBegin"), request.PathValue("timestampEnd"))
+		query := request.URL.Query()
+		timestampBegin, timestampEnd := query.Get("timestampBegin"), query.Get("timestampEnd")
+		if timestampBegin == "" || timestampEnd == "" {
+			SendMessage(response, http.StatusBadRequest, "timestampBegin and timestampEnd are required.")
+			return
+		}
+		rows, err := h.Tags.TagValueFloatRange(request.Context(), id, timestampBegin, timestampEnd)
 		sendListOrZero(response, rows, err, "Error fetching values.")
 	}))
 
@@ -106,21 +122,31 @@ func (h *Handlers) registerTagValues(mux *http.ServeMux) {
 		sendListOrZero(response, rows, err, "Error fetching the time series.")
 	}))
 
-	HandleFunc(mux, "GET /lastTagValueBoolean/{id}/{limit}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
+	// ?count=1&offset=0 (count 1 to 1000, default 1), newest first
+	HandleFunc(mux, "GET /tagValueBooleanHistory/{id}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
 		id, ok := ParseIDParam(response, request, "id")
 		if !ok {
 			return
 		}
-		rows, err := h.Tags.LastTagValueBoolean(request.Context(), id, parseLimit(request.PathValue("limit")))
+		query := request.URL.Query()
+		offset := max(0, intParam(query.Get("offset"), 0))
+		rows, err := h.Tags.TagValueBooleanHistory(request.Context(), id, parseCount(query.Get("count")), offset)
 		sendListOrZero(response, rows, err, "Error fetching values.")
 	}))
 
-	HandleFunc(mux, "GET /powerConsumption/{id}/{timestampBegin}/{timestampEnd}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
+	// ?timestampBegin=...&timestampEnd=... (both required)
+	HandleFunc(mux, "GET /powerConsumption/{id}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
 		id, ok := ParseIDParam(response, request, "id")
 		if !ok {
 			return
 		}
-		consumption, err := h.Tags.PowerConsumption(request.Context(), id, request.PathValue("timestampBegin"), request.PathValue("timestampEnd"))
+		query := request.URL.Query()
+		timestampBegin, timestampEnd := query.Get("timestampBegin"), query.Get("timestampEnd")
+		if timestampBegin == "" || timestampEnd == "" {
+			SendMessage(response, http.StatusBadRequest, "timestampBegin and timestampEnd are required.")
+			return
+		}
+		consumption, err := h.Tags.PowerConsumption(request.Context(), id, timestampBegin, timestampEnd)
 		if err != nil {
 			SendError(response, err, "", "Error computing the power consumption.")
 			return
@@ -146,17 +172,20 @@ func (h *Handlers) registerTagValues(mux *http.ServeMux) {
 		SendJSON(response, http.StatusOK, value)
 	}))
 
-	HandleFunc(mux, "GET /lastTagValueLocation/{id}/{limit}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
+	// ?count=1&offset=0 (count 1 to 1000, default 1), newest first
+	HandleFunc(mux, "GET /tagValueLocationHistory/{id}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
 		id, ok := ParseIDParam(response, request, "id")
 		if !ok {
 			return
 		}
-		rows, err := h.Tags.LastTagValueLocation(request.Context(), id, parseLimit(request.PathValue("limit")))
+		query := request.URL.Query()
+		offset := max(0, intParam(query.Get("offset"), 0))
+		rows, err := h.Tags.TagValueLocationHistory(request.Context(), id, parseCount(query.Get("count")), offset)
 		sendListOrZero(response, rows, err, "Error fetching locations.")
 	}))
 
 	// ?startDate=...&endDate=... (both required), oldest first
-	HandleFunc(mux, "GET /lastTagValueLocation/{id}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
+	HandleFunc(mux, "GET /tagValueLocationRange/{id}", h.auth.Middleware(func(response http.ResponseWriter, request *http.Request) {
 		id, ok := ParseIDParam(response, request, "id")
 		if !ok {
 			return
@@ -167,7 +196,7 @@ func (h *Handlers) registerTagValues(mux *http.ServeMux) {
 			SendMessage(response, http.StatusBadRequest, "startDate and endDate are required.")
 			return
 		}
-		rows, err := h.Tags.TagValueLocation(request.Context(), id, startDate, endDate)
+		rows, err := h.Tags.TagValueLocationRange(request.Context(), id, startDate, endDate)
 		sendListOrZero(response, rows, err, "Error fetching locations.")
 	}))
 

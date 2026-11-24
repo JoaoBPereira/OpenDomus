@@ -23,6 +23,10 @@ export function isJwtExpired(token: string): boolean {
         }
 }
 
+// Site-wide display format: dd-mm-yyyy (pt-PT gives dd/mm/yyyy), in Lisbon time.
+export const formatDate = (d: Date) => d.toLocaleDateString('pt-PT', { timeZone: 'Europe/Lisbon' }).replace(/\//g, '-');
+export const formatDateTime = (d: Date) => d.toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' }).replace(/\//g, '-');
+
 export class FloatTimeValue {
   value: number = 0;
   timestamp: Date = new Date();

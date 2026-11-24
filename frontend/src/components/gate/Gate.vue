@@ -3,6 +3,7 @@
 
   import { getLatestTagValueFloat, getTagValueFloat } from '../../services/api';
   import Modal from '../ui/Modal.vue';
+  import { formatDate, formatDateTime } from '../../utils';
   import { TAG_GATE } from '../../constants/tagIds';
 
   const gateOpen = ref<{ value: number; timestamp: string }>();
@@ -33,7 +34,7 @@
         const key = dayKey(item.date);
         let group = groups[groups.length - 1];
         if (!group || group.key !== key) {
-          const dateLabel = item.date.toLocaleDateString('en-US', { timeZone: TZ, month: 'long', day: 'numeric', year: 'numeric' });
+          const dateLabel = formatDate(item.date);
           const prefix = key === todayKey ? 'Today' : key === yesterdayKey ? 'Yesterday' : item.date.toLocaleDateString('en-US', { timeZone: TZ, weekday: 'long' });
           group = { key, label: `${prefix} · ${dateLabel}`, items: [] };
           groups.push(group);
@@ -52,7 +53,7 @@
   });
   const lastChange = computed(() => {
     if (!gateOpen.value) return 'Gate';
-    return `Gate ${statusText.value.toLowerCase()} since ${new Date(gateOpen.value.timestamp).toLocaleString('pt-PT', { timeZone: TZ })}`;
+    return `Gate ${statusText.value.toLowerCase()} since ${formatDateTime(new Date(gateOpen.value.timestamp))}`;
   });
 
   const fetchData = () => {
@@ -89,7 +90,7 @@
     lineData.value = tempValues;
 
     if (tempValues.length > 0) {
-      dialogTitle.value = `${title} - Last Update: ${tempValues[tempValues.length - 1].date.toLocaleString('pt-PT', { timeZone: 'Europe/Lisbon' })}`;
+      dialogTitle.value = `${title} - Last Update: ${formatDateTime(tempValues[tempValues.length - 1].date)}`;
     }
   };
 

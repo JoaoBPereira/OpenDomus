@@ -1,7 +1,7 @@
 <script setup lang="ts">
   import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue';
 
-  import { getLatestFloat, type FloatTimeValue } from '../../utils';
+  import { formatDate, formatDateTime, getLatestFloat, type FloatTimeValue } from '../../utils';
   import { getTagValueFloat } from '../../services/api';
   import Modal from '../ui/Modal.vue';
   import { openChartKey } from '../../composables/useOpenChart';
@@ -114,7 +114,7 @@
     // Keep only the readings where the state actually changed.
     historyData.value = values.filter((item, index) => index === 0 || item.value !== values[index - 1].value);
 
-    historyTitle.value = values.length > 0 ? `Boiler State - Last Update: ${values[values.length - 1].date.toLocaleString('pt-PT', { timeZone: TZ })}` : 'Boiler State';
+    historyTitle.value = values.length > 0 ? `Boiler State - Last Update: ${formatDateTime(values[values.length - 1].date)}` : 'Boiler State';
   };
 
   const openHistory = () => {
@@ -135,7 +135,7 @@
         const key = dayKey(item.date);
         let group = groups[groups.length - 1];
         if (!group || group.key !== key) {
-          const dateLabel = item.date.toLocaleDateString('en-US', { timeZone: TZ, month: 'long', day: 'numeric', year: 'numeric' });
+          const dateLabel = formatDate(item.date);
           const prefix = key === todayKey ? 'Today' : key === yesterdayKey ? 'Yesterday' : item.date.toLocaleDateString('en-US', { timeZone: TZ, weekday: 'long' });
           group = { key, label: `${prefix} · ${dateLabel}`, items: [] };
           groups.push(group);

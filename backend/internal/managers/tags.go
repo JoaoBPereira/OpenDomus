@@ -117,18 +117,18 @@ func parseLastValueRow(tag *models.Tag, row map[string]any) {
 	case "tagvaluefloat":
 		if at, found := row["float_time"].(time.Time); found {
 			value, _ := row["float_value"].(float64)
-			tag.SetLastValue(models.NewTagValueFloat(tag.ID, at, value))
+			tag.SetLatestValue(models.NewTagValueFloat(tag.ID, at, value))
 		}
 	case "tagvalueboolean":
 		if at, found := row["bool_time"].(time.Time); found {
 			value, _ := row["bool_value"].(bool)
-			tag.SetLastValue(models.NewTagValueBoolean(tag.ID, at, value))
+			tag.SetLatestValue(models.NewTagValueBoolean(tag.ID, at, value))
 		}
 	case "tagvaluelocation":
 		if at, found := row["loc_time"].(time.Time); found {
 			latitude, _ := row["latitude"].(float64)
 			longitude, _ := row["longitude"].(float64)
-			tag.SetLastValue(&models.TagValueLocation{
+			tag.SetLatestValue(&models.TagValueLocation{
 				TagID:     tag.ID,
 				Latitude:  latitude,
 				Longitude: longitude,
@@ -277,57 +277,53 @@ func (manager *TagsManager) SaveTagValueByTagID(ctx context.Context, tagID int, 
 			return err
 		}
 	}
-	return manager.SaveTagValue(ctx, tag, value, at)
+	return manager.SaveTagValue(ctx, tag, value, at, true)
 }
 
-// SaveTagValue converts the value to the type of the tag, stores it (unless in debug mode) and
-// keeps it as the last value of the tag
-func (manager *TagsManager) SaveTagValue(ctx context.Context, tag *models.Tag, value any, at time.Time) error {
+// SaveTagValue converts the value to the type of the tag, keeps it as the last value of the tag
+// and, when store is set (and not in debug mode), writes it to the database
+func (manager *TagsManager) SaveTagValue(ctx context.Context, tag *models.Tag, value any, at time.Time, store bool) error {
 	switch tag.ValueType {
 	case "tagvaluefloat":
 		number, err := parse.Float(value)
 		if err != nil {
 			return fmt.Errorf("tag %s: %w", tag.Name, err)
 		}
-		if !manager.debug {
-			if err := manager.recordFloat(ctx, tag, number, at); err != nil {
-				return err
-			}
-		}
-		tag.SetLastValue(models.NewTagValueFloat(tag.ID, at, number))
+		tag.SetLatestValue(models.NewTagValueFloat(tag.ID, at, number))
+		// It tells the automations that a tag just got a new value, so any automation watching that tag is re-evaluated.
 		if manager.onValue != nil {
 			manager.onValue(tag.ID)
 		}
-		return nil
+		if !store || manager.debug {
+			return nil
+		}
+		return manager.recordFloat(ctx, tag, number, at)
 
 	case "tagvalueboolean":
 		boolean := parse.Bool(value)
-		if !manager.debug {
-			if err := manager.recordBoolean(ctx, tag, boolean, at); err != nil {
-				return err
-			}
-		}
-		tag.SetLastValue(models.NewTagValueBoolean(tag.ID, at, boolean))
+		tag.SetLatestValue(models.NewTagValueBoolean(tag.ID, at, boolean))
+		// It tells the automations that a tag just got a new value, so any automation watching that tag is re-evaluated.
 		if manager.onValue != nil {
 			manager.onValue(tag.ID)
 		}
-		return nil
+		if !store || manager.debug {
+			return nil
+		}
+		return manager.recordBoolean(ctx, tag, boolean, at)
 
 	case "tagvaluelocation":
 		location, isLocation := value.(*models.TagValueLocation)
 		if !isLocation {
 			return fmt.Errorf("tag %s: value is not a location", tag.Name)
 		}
-		if !manager.debug {
-			if err := manager.recordLocation(ctx, tag, location, at); err != nil {
-				return err
-			}
-		}
 		last := *location
 		last.TagID = tag.ID
 		last.Time = at
-		tag.SetLastValue(&last)
-		return nil
+		tag.SetLatestValue(&last)
+		if !store || manager.debug {
+			return nil
+		}
+		return manager.recordLocation(ctx, tag, location, at)
 	}
 	return fmt.Errorf("tag %s: unknown value type %q", tag.Name, tag.ValueType)
 }
@@ -422,7 +418,7 @@ func (manager *TagsManager) LatestTagValue(ctx context.Context, tagID int) (mode
 	if err != nil {
 		return nil, err
 	}
-	if last := tag.LastValue(); last != nil {
+	if last := tag.GetLatestValue(); last != nil {
 		return last, nil
 	}
 	return models.NewTagValueFloat(tagID, time.Unix(0, 0).UTC(), 0), nil
@@ -434,7 +430,7 @@ func (manager *TagsManager) LatestTagValueLocation(ctx context.Context, tagID in
 	if err != nil {
 		return nil, err
 	}
-	if last := tag.LastValue(); last != nil {
+	if last := tag.GetLatestValue(); last != nil {
 		return last, nil
 	}
 	return models.NewTagValueLocation(tagID, 0, 0, 0, 0, 0, time.Unix(0, 0).UTC()), nil
@@ -452,31 +448,31 @@ func (manager *TagsManager) NearestTagValueFloat(ctx context.Context, tagID int,
 	return &rows[0], nil
 }
 
-func (manager *TagsManager) LastTagValueFloat(ctx context.Context, tagID int, limit int) ([]models.TagValueFloat, error) {
+func (manager *TagsManager) TagValueFloatHistory(ctx context.Context, tagID int, count int, offset int) ([]models.TagValueFloat, error) {
 	var rows []models.TagValueFloat
-	err := manager.db.QueryInto(ctx, &rows, "SELECT tag_id AS tagId, time, value FROM tagvaluefloat WHERE tag_id = $1 ORDER BY time DESC LIMIT $2", tagID, limit)
+	err := manager.db.QueryInto(ctx, &rows, "SELECT tag_id AS tagId, time, value FROM tagvaluefloat WHERE tag_id = $1 ORDER BY time DESC LIMIT $2 OFFSET $3", tagID, count, offset)
 	return rows, err
 }
 
-func (manager *TagsManager) LastTagValueBoolean(ctx context.Context, tagID int, limit int) ([]models.TagValueBoolean, error) {
+func (manager *TagsManager) TagValueBooleanHistory(ctx context.Context, tagID int, count int, offset int) ([]models.TagValueBoolean, error) {
 	var rows []models.TagValueBoolean
-	err := manager.db.QueryInto(ctx, &rows, "SELECT tag_id AS tagId, time, value FROM tagvalueboolean WHERE tag_id = $1 ORDER BY time DESC LIMIT $2", tagID, limit)
+	err := manager.db.QueryInto(ctx, &rows, "SELECT tag_id AS tagId, time, value FROM tagvalueboolean WHERE tag_id = $1 ORDER BY time DESC LIMIT $2 OFFSET $3", tagID, count, offset)
 	return rows, err
 }
 
-func (manager *TagsManager) LastTagValueLocation(ctx context.Context, tagID int, limit int) ([]models.TagValueLocation, error) {
+func (manager *TagsManager) TagValueLocationHistory(ctx context.Context, tagID int, count int, offset int) ([]models.TagValueLocation, error) {
 	var rows []models.TagValueLocation
-	err := manager.db.QueryInto(ctx, &rows, "SELECT id, tag_id AS tagId, latitude, longitude, accuracy, altitude, speed, time FROM tagvaluelocation WHERE tag_id = $1 ORDER BY time DESC LIMIT $2", tagID, limit)
+	err := manager.db.QueryInto(ctx, &rows, "SELECT id, tag_id AS tagId, latitude, longitude, accuracy, altitude, speed, time FROM tagvaluelocation WHERE tag_id = $1 ORDER BY time DESC LIMIT $2 OFFSET $3", tagID, count, offset)
 	return rows, err
 }
 
-func (manager *TagsManager) TagValueLocation(ctx context.Context, tagID int, begin string, end string) ([]models.TagValueLocation, error) {
+func (manager *TagsManager) TagValueLocationRange(ctx context.Context, tagID int, begin string, end string) ([]models.TagValueLocation, error) {
 	var rows []models.TagValueLocation
 	err := manager.db.QueryInto(ctx, &rows, "SELECT id, tag_id AS tagId, latitude, longitude, accuracy, altitude, speed, time FROM tagvaluelocation WHERE tag_id = $1 AND time BETWEEN $2 AND $3 ORDER BY time ASC", tagID, begin, end)
 	return rows, err
 }
 
-func (manager *TagsManager) TagValueFloat(ctx context.Context, tagID int, begin string, end string) ([]models.TagValueFloat, error) {
+func (manager *TagsManager) TagValueFloatRange(ctx context.Context, tagID int, begin string, end string) ([]models.TagValueFloat, error) {
 	var rows []models.TagValueFloat
 	err := manager.db.QueryInto(ctx, &rows, "SELECT tag_id AS tagId, time, value FROM tagvaluefloat WHERE tag_id = $1 AND time BETWEEN $2 AND $3 ORDER BY time ASC", tagID, begin, end)
 	return rows, err
@@ -509,7 +505,7 @@ func (manager *TagsManager) PowerConsumption(ctx context.Context, tagID int, beg
 		deviceType = *deviceTypes[0].Type
 	}
 
-	rows, err := manager.TagValueFloat(ctx, tagID, begin, end)
+	rows, err := manager.TagValueFloatRange(ctx, tagID, begin, end)
 	if err != nil {
 		return 0, err
 	}

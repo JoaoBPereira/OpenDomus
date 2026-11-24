@@ -1,6 +1,7 @@
 <script setup lang="ts">
   import { computed, inject } from 'vue';
   import { openChartKey } from '../../composables/useOpenChart';
+  import { formatDateTime } from '../../utils';
   import { TAG_TEMP_OUTSIDE } from '../../constants/tagIds';
   import { formatDelta, temperatureTone, type TemperatureReading } from './temperatureData';
 
@@ -38,7 +39,7 @@
       'Outside',
       value.value !== undefined ? `${temperature.value} degrees Celsius` : status.value,
       `Last hour: ${delta.value}`,
-      reading?.timestamp ? `Updated ${reading.timestamp.toLocaleString()}` : '',
+      reading?.timestamp ? `Updated ${formatDateTime(reading.timestamp)}` : '',
       reading?.error ?? reading?.historyError ?? '',
       reading?.stale ? 'Reading is more than 24 hours old' : '',
     ]

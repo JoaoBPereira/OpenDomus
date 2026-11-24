@@ -18,7 +18,7 @@ import (
 // TagStore is what the devices need from the TagsManager
 type TagStore interface {
 	TagsByDeviceID(deviceID int) []*models.Tag
-	SaveTagValue(ctx context.Context, tag *models.Tag, value any, at time.Time) error
+	SaveTagValue(ctx context.Context, tag *models.Tag, value any, at time.Time, store bool) error
 }
 
 // Deps is what every device is built with
@@ -70,18 +70,11 @@ func (p *poller) stop() {
 	p.job = nil
 }
 
-// record keeps value as the last value of the tag and stores it when this run is one that stores
-func (p *poller) record(ctx context.Context, tag *models.Tag, value float64, at time.Time) {
-	tag.SetLastValue(models.NewTagValueFloat(tag.ID, at, value))
-	p.store(ctx, tag, value, at)
-}
-
-// store writes the value when this run is one that stores (see Tag.ShouldStore)
-func (p *poller) store(ctx context.Context, tag *models.Tag, value any, at time.Time) {
-	if !tag.ShouldStore(int(p.runCount.Load())) {
-		return
-	}
-	if err := p.deps.Tags.SaveTagValue(ctx, tag, value, at); err != nil {
+// record hands the value to the TagStore, which keeps it as the last value of the tag and stores
+// it when this run is one that stores (see Tag.ShouldStore)
+func (p *poller) record(ctx context.Context, tag *models.Tag, value any, at time.Time) {
+	store := tag.ShouldStore(int(p.runCount.Load()))
+	if err := p.deps.Tags.SaveTagValue(ctx, tag, value, at, store); err != nil {
 		slog.Error("saving tag value failed", "tag", tag.Name, "err", err)
 	}
 }

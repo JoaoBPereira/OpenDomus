@@ -4,14 +4,12 @@ import (
 	"cmp"
 	"fmt"
 	"net/http"
-	"slices"
 	"strconv"
-	"strings"
 
 	"od/internal/models"
 )
 
-// The words of the automation logs: how a node, a tag test and a decision are written
+// The words of the automation logs: how a node is named
 
 // nodeName describes a node in words for the logs, with the tag and device names:
 // "Captur battery", "turn off Captur plug", "wait 300s then Captur battery"
@@ -71,63 +69,4 @@ func pick(condition bool, yes string, no string) string {
 		return yes
 	}
 	return no
-}
-
-func mark(ok bool) string {
-	return pick(ok, "✓", "✗")
-}
-
-// check shows a tag test with the value it read, for the logs: "Captur battery 82 > 80 ✓",
-// "Gate open is false, wants true ✗", "Captur battery has no value ✗"
-func check(name string, node models.AutomationNode, value models.TagValue, ok bool) string {
-	switch value := value.(type) {
-	case *models.TagValueFloat:
-		if value != nil {
-			return name + " " + strconv.FormatFloat(value.Value, 'f', -1, 64) + " " + node.Operator + " " + strconv.FormatFloat(node.Value, 'f', -1, 64) + " " + mark(ok)
-		}
-	case *models.TagValueBoolean:
-		if value != nil {
-			return name + " is " + strconv.FormatBool(value.Value) + ", wants " + strconv.FormatBool(node.BoolValue) + " " + mark(ok)
-		}
-	}
-	return name + " has no value " + mark(ok)
-}
-
-// step is the decision of one node in words. summary is false for the steps that only add noise to
-// the info logs of a run (the triggers that did not fire).
-type step struct {
-	node    string // id, to find the node in the editor
-	text    string
-	summary bool
-}
-
-// inputTypes names the inputs of a node by their node type, each type once: "timer or and"; with
-// onlyTrue only the inputs whose output is true
-func inputTypes(inputs []string, types map[string]string, results map[string]nodeResult, onlyTrue bool) string {
-	kinds := []string{}
-	for _, input := range inputs {
-		if (!onlyTrue || results[input].output) && !slices.Contains(kinds, types[input]) {
-			kinds = append(kinds, types[input])
-		}
-	}
-	if len(kinds) == 0 {
-		return "input"
-	}
-	return strings.Join(kinds, " or ")
-}
-
-// conditionText says in words what a trigger or a gate decided: "sunset fired ✓",
-// "Captur battery 82 > 80 ✓", "if Gate open is false, wants true ✗", "AND ✓"
-func (manager *AutomationsManager) conditionText(node models.AutomationNode, name string, value models.TagValue, result nodeResult, inputs string) string {
-	switch {
-	case isEvent(node.Type):
-		return name + pick(result.output, " fired ✓", " did not fire ✗")
-	case watchesTag(node.Type):
-		return check(name, node, value, result.output)
-	case node.Type == models.NodeCondition && result.input:
-		return "if " + check(manager.tagName(node.TagID), node, value, result.output)
-	case node.Type == models.NodeCondition:
-		return name + " ✗ (not all of its " + inputs + " inputs are true)"
-	}
-	return name + " " + mark(result.output) // and, or
 }

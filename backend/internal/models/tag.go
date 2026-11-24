@@ -21,8 +21,8 @@ type Tag struct {
 	// LastTagValue is the most recent value seen for this tag. It is exported for the JSON
 	// encoder; read it with LastValue() and write it with SetLastValue(), since the devices
 	// update it from their own goroutines.
-	LastTagValue   TagValue `json:"lastTagValue"`
-	lastValueMutex sync.Mutex
+	LatestValue   TagValue `json:"latestTagValue"`
+	lastestValueMutex sync.Mutex
 }
 
 // ShouldStore says whether the value of the given run is stored: the first run and then every
@@ -36,18 +36,18 @@ func (tag *Tag) ShouldStore(runCount int) bool {
 }
 
 // SetLastValue keeps the value when it is newer than the current one
-func (tag *Tag) SetLastValue(value TagValue) {
-	tag.lastValueMutex.Lock()
-	defer tag.lastValueMutex.Unlock()
+func (tag *Tag) SetLatestValue(value TagValue) {
+	tag.lastestValueMutex.Lock()
+	defer tag.lastestValueMutex.Unlock()
 
-	if tag.LastTagValue == nil || tag.LastTagValue.GetTime().Before(value.GetTime()) {
-		tag.LastTagValue = value
+	if tag.LatestValue == nil || tag.LatestValue.GetTime().Before(value.GetTime()) {
+		tag.LatestValue = value
 	}
 }
 
-func (tag *Tag) LastValue() TagValue {
-	tag.lastValueMutex.Lock()
-	defer tag.lastValueMutex.Unlock()
+func (tag *Tag) GetLatestValue() TagValue {
+	tag.lastestValueMutex.Lock()
+	defer tag.lastestValueMutex.Unlock()
 
-	return tag.LastTagValue
+	return tag.LatestValue
 }

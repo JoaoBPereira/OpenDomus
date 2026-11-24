@@ -82,7 +82,7 @@ func (device *SNZB02D) onMessage(client mqtt.Client, message mqtt.Message) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
-	if err := device.deps.Tags.SaveTagValue(ctx, tag, data["temperature"], time.Now()); err != nil {
+	if err := device.deps.Tags.SaveTagValue(ctx, tag, data["temperature"], time.Now(), true); err != nil {
 		slog.Error("saving tag value failed", "tag", tag.Name, "err", err)
 	}
 }

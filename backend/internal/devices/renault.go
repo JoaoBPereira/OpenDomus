@@ -132,5 +132,5 @@ func (device *Renault) saveTag(ctx context.Context, item renaultTag, data map[st
 			at = parsed
 		}
 	}
-	device.store(ctx, item.tag, value, at)
+	device.record(ctx, item.tag, value, at)
 }

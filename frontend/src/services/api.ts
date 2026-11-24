@@ -62,12 +62,12 @@ export const getLatestTagValueFloat = async (tagId: number | string): Promise<Ta
     return authenticatedFetch<TagValueFloat>(`latestTagValueFloat/${tagId}`);
 };
 
-export const getLastTagValueFloat = async (tagId: number | string, count: number): Promise<TagValueFloat[]> => {
-    return authenticatedFetch<TagValueFloat[]>(`lastTagValueFloat/${tagId}/${count}`);
+export const getTagValueFloatHistory =async (tagId: number | string, count: number, offset = 0): Promise<TagValueFloat[]> => {
+    return authenticatedFetch<TagValueFloat[]>(`tagValueFloatHistory/${tagId}?count=${count}&offset=${offset}`);
 };
 
-export const getLastTagValueBoolean = async (tagId: number | string, count: number): Promise<TagValueBoolean[]> => {
-    return authenticatedFetch<TagValueBoolean[]>(`lastTagValueBoolean/${tagId}/${count}`);
+export const getTagValueBooleanHistory = async (tagId: number | string, count: number, offset = 0): Promise<TagValueBoolean[]> => {
+    return authenticatedFetch<TagValueBoolean[]>(`tagValueBooleanHistory/${tagId}?count=${count}&offset=${offset}`);
 };
 
 export const getTagValueFloat = async (
@@ -75,7 +75,9 @@ export const getTagValueFloat = async (
     startDate: string,
     endDate: string
 ): Promise<TagValueFloat[]> => {
-    return authenticatedFetch<TagValueFloat[]>(`tagValueFloat/${tagId}/${startDate}/${endDate}`);
+    return authenticatedFetch<TagValueFloat[]>(
+        `tagValueFloatRange/${tagId}?timestampBegin=${encodeURIComponent(startDate)}&timestampEnd=${encodeURIComponent(endDate)}`
+    );
 };
 
 export const getTagValueFloatTimeSeries = async (
@@ -91,8 +93,8 @@ export const getLatestTagValueLocation = async (tagId: number | string): Promise
     return authenticatedFetch<TagValueLocation>(`latestTagValueLocation/${tagId}`);
 };
 
-export const getLastTagValueLocation = async (tagId: number | string, count: number): Promise<TagValueLocation[]> => {
-    return authenticatedFetch<TagValueLocation[]>(`lastTagValueLocation/${tagId}/${count}`);
+export const getTagValueLocationHistory = async (tagId: number | string, count: number, offset = 0): Promise<TagValueLocation[]> => {
+    return authenticatedFetch<TagValueLocation[]>(`tagValueLocationHistory/${tagId}?count=${count}&offset=${offset}`);
 };
 
 export const getTagValueLocation = async (
@@ -100,7 +102,7 @@ export const getTagValueLocation = async (
     startDate: string,
     endDate: string
 ): Promise<TagValueLocation[]> => {
-    return authenticatedFetch<TagValueLocation[]>(`lastTagValueLocation/${tagId}?${new URLSearchParams({ startDate, endDate })}`);
+    return authenticatedFetch<TagValueLocation[]>(`tagValueLocationRange/${tagId}?${new URLSearchParams({ startDate, endDate })}`);
 };
 
 // ============= Power Consumption APIs =============
@@ -110,7 +112,9 @@ export const getPowerConsumption = async (
     startDate: string,
     endDate: string
 ): Promise<number> => {
-    return authenticatedFetch<number>(`powerconsumption/${tagId}/${startDate}/${endDate}`);
+    return authenticatedFetch<number>(
+        `powerConsumption/${tagId}?timestampBegin=${encodeURIComponent(startDate)}&timestampEnd=${encodeURIComponent(endDate)}`
+    );
 };
 
 // ============= Power Consumption Near Timestamp APIs =============
@@ -193,7 +197,7 @@ export interface Tag {
     periodicityCount: number;
     expiresIn: number;
     enabled: boolean;
-    lastTagValue: TagValueFloat | TagValueBoolean | TagValueLocation;
+    latestValue: TagValueFloat | TagValueBoolean | TagValueLocation;
     displayIn: string[];
 }
 
